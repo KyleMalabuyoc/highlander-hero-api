@@ -4,13 +4,13 @@ export interface StudentInfo {
     major: string,
     minor: string,
     graduationYear: number,
-    currentYear: string,
+    currentYear?: string,
     interests: Course[],
-    transfer: boolean,
-    currentCredits: number
+    transfer?: boolean,
+    currentCredits?: number
 }
 
 export interface UseStudentInfoStore {
     studentInfo: StudentInfo,
     setStudentInfo: (updatedStudentInfo: StudentInfo) => void
-} 
+}

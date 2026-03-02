@@ -4,3 +4,5 @@ export const validate = (req: Request, res: Response, next: NextFunction) => {
     console.log("validating req body with schema", req.body);
     next();
 }
+
+// need some validation for registration info

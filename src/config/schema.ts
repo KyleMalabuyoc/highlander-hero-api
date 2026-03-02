@@ -24,3 +24,8 @@ export const courses = pgTable('courses', {
     type: text('type').notNull(),
     jobRelevancy: text('job_relevancy').notNull()
 });
+
+export const users = pgTable('users', {
+    id: serial('id').primaryKey(),
+    userSub: text("user_sub")
+});

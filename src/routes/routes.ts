@@ -5,20 +5,23 @@ import { getCourses, getMajors, getMinors } from "../controllers/courseControlle
 import { getSchedules } from "../controllers/scheduleController.js";
 
 const router = Router();
+const authPrefix = '/auth';
+const appPrefix = '/app'
 
 // path, middleware, controller
-router.post("/login", validate, auth.login);
-router.post("/register", validate, auth.register);
-router.post("/refresh", validate, auth.refresh);
-router.post("/confirm", validate, auth.confirm);
-router.post("/logout", validate, auth.logout);
+router.post(authPrefix + "/login", validate, auth.login);
+router.post(authPrefix + "/register", validate, auth.register);
+router.post(authPrefix + "/refresh", validate, auth.refresh);
+router.post(authPrefix + "/confirm", validate, auth.confirm);
+router.post(authPrefix + "/resend", validate, auth.resendCode);
+router.post(authPrefix + "/logout", validate, auth.logout);
 
 // schedules
-router.get("/schedules", validate, getSchedules);
+router.get(appPrefix + "/schedules", validate, getSchedules);
 
 // courses
-router.get("/courses", validate, getCourses);
-router.get("/majors", validate, getMajors);
-router.get("/minors", validate, getMinors);
+router.get(appPrefix + "/courses", validate, getCourses);
+router.get(appPrefix + "/majors", validate, getMajors);
+router.get(appPrefix + "/minors", validate, getMinors);
 
 export default router;

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import * as courseService from '../services/courseService.js';
+import * as courseService from '../services/CourseService.js';
 
 export const getCourses = async (req: Request, res: Response) => {
     res.status(200).json(await courseService.getCourses());

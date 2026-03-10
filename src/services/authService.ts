@@ -1,7 +1,7 @@
 import { Request } from "express";
 import { LoginInfo } from "../types/LoginInfo.js";
 import { dummyLoginResponse } from "../temp/dummyData.js";
-import { AdminGetUserCommand, CodeMismatchException, CognitoIdentityProviderClient, ConfirmSignUpCommand, ExpiredCodeException, InvalidParameterException, LimitExceededException, ResendConfirmationCodeCommand, SignUpCommand, TooManyRequestsException, UsernameExistsException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
+import { AdminGetUserCommand, AdminInitiateAuthCommand, AuthFlowType, CodeMismatchException, CognitoIdentityProviderClient, ConfirmSignUpCommand, ExpiredCodeException, InvalidParameterException, LimitExceededException, NotAuthorizedException, ResendConfirmationCodeCommand, SignUpCommand, TooManyRequestsException, UsernameExistsException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
 import 'dotenv/config';
 import { RegisterInfo } from "../types/RegisterInfo.js";
 import { db } from "../config/db.js";
@@ -9,12 +9,49 @@ import { users } from "../config/schema.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
 import { RegisterResponse } from "../types/responses/CognitoResponse.js";
 import redis from "../config/redis.js";
-// need to take care of unhappy cases as well
 
 const client = new CognitoIdentityProviderClient({});
 
-export const login = (req: Request): LoginInfo => {
-    return dummyLoginResponse;
+export const login = async (req: Request): Promise<ResponseEntity> => {
+    
+    const { email, password } = req.body;
+
+    // levergaing AdminInitiateAuthCommand
+    // once in ECS, ECS execution task loads temp creds for us
+    // AdminInitiateAuthCommand / AWS sdk grabs creds and uses those for cognito calls
+    // AdminInitiateAuthCommand use client id and IAM user
+
+    const command = new AdminInitiateAuthCommand({
+        ClientId: process.env.AWS_COGNITO_CLIENT_ID,
+        UserPoolId: process.env.AWS_USER_POOL_ID,
+        AuthFlow: AuthFlowType.ADMIN_USER_PASSWORD_AUTH,
+        AuthParameters: { USERNAME: email, PASSWORD: password }
+    });
+
+    try {
+
+        const res = await client.send(command);
+        return new ResponseEntity(200, { access: {
+            accessToken: res.AuthenticationResult?.AccessToken,
+            expiresIn: res.AuthenticationResult?.ExpiresIn,
+            idToken: res.AuthenticationResult?.IdToken,
+            tokenType: res.AuthenticationResult?.TokenType
+        }, cognitoStatus: 'authenticated' });
+
+    } catch(err) {
+
+        if (err instanceof UserNotFoundException) {
+            return new ResponseEntity(400, { cognitoStatus: "user-not-found"}, "User not found.");
+        }
+
+        if (err instanceof NotAuthorizedException) {
+            return new ResponseEntity(401, { cognitoStatus: "not-authenticated" }, "Username or password is incorrect.");
+        }
+        
+        console.error(err);
+        return new ResponseEntity(500, {});
+    }
+
 }
 
 export const register = async (req: Request): Promise<ResponseEntity> => {
@@ -150,7 +187,7 @@ export const resendCode = async (req: Request): Promise<ResponseEntity> => {
             await redis.expire(`resend-code:${email}`, Number(process.env.UPSTASH_REDIS_EXPIRY));
         }
 
-        if (resends > 2) {
+        if (resends > 1) {
             return new ResponseEntity(429, { cognitoStatus: 'too-many-requests' });
         }
 
@@ -181,4 +218,22 @@ export const refresh = (req: Request): LoginInfo => {
 
 export const logout = (req: Request): LoginInfo => {
     return dummyLoginResponse;
+}
+
+export const cancel = async (req: Request): Promise<ResponseEntity> => {
+
+    const { email } = req.body;
+
+    try {
+
+        await redis.del(`confirm-attempts:${ email }`);
+        await redis.del(`resend-code:${ email }`);
+
+        // do we need a cancel count?? to limit user cancel requests
+        return new ResponseEntity(200, true);
+
+    } catch(err) {
+
+        return new ResponseEntity(500, {}, "Internal server error. " + err);
+    }
 }

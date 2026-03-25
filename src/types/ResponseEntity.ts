@@ -7,7 +7,7 @@
 export class ResponseEntity {
 
     status: number;
-    data: any;
+    data?: any;
     errorMessage?: string;
 
    constructor(status: number, data: any, errorMessage?: string) {

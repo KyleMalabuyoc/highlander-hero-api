@@ -3,7 +3,6 @@ import { LoginInfo } from "../types/LoginInfo.js";
 import { dummyLoginResponse } from "../temp/dummyData.js";
 import { AdminGetUserCommand, AdminInitiateAuthCommand, AuthFlowType, CodeMismatchException, CognitoIdentityProviderClient, ConfirmSignUpCommand, ExpiredCodeException, InvalidParameterException, LimitExceededException, NotAuthorizedException, ResendConfirmationCodeCommand, SignUpCommand, TooManyRequestsException, UsernameExistsException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
 import 'dotenv/config';
-import { RegisterInfo } from "../types/RegisterInfo.js";
 import { db } from "../config/db.js";
 import { users } from "../config/schema.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
@@ -12,9 +11,7 @@ import redis from "../config/redis.js";
 
 const client = new CognitoIdentityProviderClient({});
 
-export const login = async (req: Request): Promise<ResponseEntity> => {
-    
-    const { email, password } = req.body;
+export const login = async (email: string, password: string): Promise<ResponseEntity> => {
 
     // levergaing AdminInitiateAuthCommand
     // once in ECS, ECS execution task loads temp creds for us
@@ -54,16 +51,14 @@ export const login = async (req: Request): Promise<ResponseEntity> => {
 
 }
 
-export const register = async (req: Request): Promise<ResponseEntity> => {
-
-    const registrationInfo: RegisterInfo = req.body;
+export const register = async (email: string, password: string): Promise<ResponseEntity> => {
 
     const command = new SignUpCommand({
         ClientId: process.env.AWS_COGNITO_CLIENT_ID,
-        Username: registrationInfo.email,
-        Password: registrationInfo.password,
+        Username: email,
+        Password: password,
         UserAttributes: [
-            { Name: 'email', Value: registrationInfo.email }
+            { Name: 'email', Value: email }
         ]
     });
 
@@ -81,7 +76,7 @@ export const register = async (req: Request): Promise<ResponseEntity> => {
 
             const user = await client.send(new AdminGetUserCommand({
                 UserPoolId: process.env.AWS_USER_POOL_ID,
-                Username: registrationInfo.email
+                Username: email
             }));
 
             if (user.UserStatus === 'CONFIRMED') {
@@ -90,7 +85,7 @@ export const register = async (req: Request): Promise<ResponseEntity> => {
 
             // check cache first to see if user is locked out for 24 hours
             // if so, dont send the code
-            const attempts = await redis.get<number>(`confirm-attempts:${registrationInfo.email}`) ?? 0;
+            const attempts = await redis.get<number>(`confirm-attempts:${email}`) ?? 0;
 
             if (attempts >= 3) {
                 return new ResponseEntity(429, { cognitoStatus: 'too-many-requests'});
@@ -102,7 +97,7 @@ export const register = async (req: Request): Promise<ResponseEntity> => {
 
                 const result = await client.send(new ResendConfirmationCodeCommand({
                     ClientId: process.env.AWS_COGNITO_CLIENT_ID,
-                    Username: registrationInfo.email
+                    Username: email
                 }));
 
                 return new ResponseEntity(200, { message: "Registration successful. Check your email for a verification code.", destination: result.CodeDeliveryDetails?.Destination, cognitoStatus: 'confirm-code' })
@@ -114,9 +109,7 @@ export const register = async (req: Request): Promise<ResponseEntity> => {
 }
 
 // confirm registration code
-export const confirm = async (req: Request): Promise<ResponseEntity> => {
-
-    const { email, code } = req.body;
+export const confirm = async (email: string, code: string): Promise<ResponseEntity> => {
 
     const command = new ConfirmSignUpCommand({
         ClientId: process.env.AWS_COGNITO_CLIENT_ID,
@@ -124,12 +117,13 @@ export const confirm = async (req: Request): Promise<ResponseEntity> => {
         ConfirmationCode: code
     });
 
-    // grab current amount of attempts from cache
+    // grab current amount of attempts from cache - increments first then returns value
     const attempts = await redis.incr(`confirm-attempts:${email}`).catch(err => new ResponseEntity(500, {}, "Internal server error." + err));
 
     // TODO: maybe global exception handler -> generic
     try {
 
+        // first attempt, set expiry
         if (attempts === 1) {
             await redis.expire(`confirm-attempts:${email}`, Number(process.env.UPSTASH_REDIS_EXPIRY));
         }
@@ -167,9 +161,7 @@ export const confirm = async (req: Request): Promise<ResponseEntity> => {
 
 }
 
-export const resendCode = async (req: Request): Promise<ResponseEntity> => {
-
-    const { email } = req.body;
+export const resendCode = async (email: string): Promise<ResponseEntity> => {
 
     const command = new ResendConfirmationCodeCommand({
         ClientId: process.env.AWS_COGNITO_CLIENT_ID,
@@ -220,9 +212,7 @@ export const logout = (req: Request): LoginInfo => {
     return dummyLoginResponse;
 }
 
-export const cancel = async (req: Request): Promise<ResponseEntity> => {
-
-    const { email } = req.body;
+export const cancel = async (email: string): Promise<ResponseEntity> => {
 
     try {
 

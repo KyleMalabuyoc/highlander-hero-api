@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, uuid } from "drizzle-orm/pg-core";
 
 export const majors = pgTable('majors', {
     id: serial('id').primaryKey(),
@@ -27,5 +27,22 @@ export const courses = pgTable('courses', {
 
 export const users = pgTable('users', {
     id: serial('id').primaryKey(),
-    userSub: text("user_sub")
+    userSub: text("user_sub").unique()
+});
+
+export const schedules = pgTable('schedules', {
+    id: serial('id').primaryKey(),
+    scheduleName: text("schedule_name"),
+    totalCredits: integer("total_credits"),
+    userId: uuid('user_id').notNull().references(() => users.id),
+    studentInfoId: uuid('studentinfo_id').notNull().references(() => studentInfo.id)
+});
+
+export const studentInfo = pgTable('studentInfo', {
+    id: serial('id').primaryKey(),
+    gradYear: integer('grad_year').notNull(),
+    currYear: integer('curr_year').notNull(),
+    interests: text('interests'),
+    majorId: uuid('major_id').notNull().references(() => majors.id),
+    minorId: uuid('minor_id').notNull().references(() => minors.id)
 });

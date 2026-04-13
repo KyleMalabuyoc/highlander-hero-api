@@ -1,26 +1,82 @@
+import { eq } from "drizzle-orm";
 import { db } from "../config/db.js";
-import { courses, majors, minors } from "../config/schema.js";
+import redis from "../config/redis.js";
+import { coursePrerequisites, courses, majors, minors } from "../config/schema.js";
+import { Major, Minor } from "../types/AcademicProgram.js";
+import { Course } from "../types/Course.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
 
 export const getCourses = async (): Promise<ResponseEntity> => {
+
     try {
 
-        const res = await db.select().from(courses);
-        return { status: 200, data: res };
+        // typing so upstash knows what to deserialize to. even without it, it deserializes
+        const cache = await redis.get<Course[]>(`courses:all`);
+
+        if (cache !== null) { // hit
+            return new ResponseEntity(200, cache);
+        }
 
     } catch(err) {
+        console.error(err);
+    }
+    
+    try {
+
+        const res = await db.select()
+                    .from(courses)
+                    .innerJoin(coursePrerequisites, eq(coursePrerequisites.courseId, courses.id));
+
+        const coursesMap = new Map();
+
+        res.forEach((r) => {
+
+            if (coursesMap.get(r.courses.id) === undefined) {
+                // add new course object to map
+                coursesMap.set(r.courses.id, { ...r.courses, prerequisites: [] }) 
+            }
+
+            let cmPrereqs = coursesMap.get(r.courses.id).prerequisites;
+            cmPrereqs.push(r.course_prerequisites.prerequisiteId);
+        });
+
+        const allCourses = Array.from(coursesMap.values());
+  
+        await redis.set(`courses:all`, JSON.stringify(allCourses),  { ex: Number(process.env.UPSTASH_REDIS_EXPIRY) });
+
+        return new ResponseEntity(200, allCourses);
+
+    } catch(err) {
+
         if (err instanceof Error) {
             return { status: 500, errorMessage: err.message };
         }
+
         return { status: 500, errorMessage: "Internal Server Error" };
     }
 }
 
 export const getMajors = async (): Promise<ResponseEntity> => {
+
+    try {
+
+        const cache = await redis.get<Major[]>(`majors:all`);
+
+        if (cache !== null) {
+            return new ResponseEntity(200, cache);
+        }
+
+    } catch(err) {
+        console.error(err);
+    }
+
     try {
 
         const res = await db.select().from(majors);
-        return { status: 200, data: res };
+
+        await redis.set(`majors:all`, JSON.stringify(res), { ex: Number(process.env.UPSTASH_REDIS_EXPIRY) });
+
+        return new ResponseEntity(200, res);
 
     } catch(err) {
         if (err instanceof Error) {
@@ -31,10 +87,26 @@ export const getMajors = async (): Promise<ResponseEntity> => {
 }
 
 export const getMinors = async (): Promise<ResponseEntity> => {
+
+    try {
+
+        const cache = await redis.get<Minor[]>(`minors:all`);
+
+        if (cache !== null) {
+            return new ResponseEntity(200, cache);
+        }
+
+    } catch(err) {
+        console.error(err);
+    }
+
     try {
 
         const res = await db.select().from(minors);
-        return { status: 200, data: res };
+
+        await redis.set(`minors:all`, JSON.stringify(res), { ex: Number(process.env.UPSTASH_REDIS_EXPIRY) });
+
+        return new ResponseEntity(200, res);
 
     } catch(err) {
         if (err instanceof Error) {

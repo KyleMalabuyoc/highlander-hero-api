@@ -5,6 +5,10 @@ export const getSchedules = async (req: Request, res: Response, next: NextFuncti
     res.status(200).json(await scheduleService.getSchedules(req));
 }
 
-export const saveNewSchedule = async(req: Request, res: Response, next: NextFunction) => {
-    res.status(200).json(await scheduleService.saveNewSchedule(req.body));
+export const createNewSchedule = async(req: Request, res: Response, next: NextFunction) => {
+    res.status(200).json(await scheduleService.createNewSchedule(req));
+}
+
+export const editNewSchedule = async (req: Request, res: Response, next: NextFunction) => {
+    res.status(200).json(await scheduleService.editSchedule(req));
 }

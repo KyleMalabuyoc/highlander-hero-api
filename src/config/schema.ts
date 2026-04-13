@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, uuid } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, uuid, primaryKey } from "drizzle-orm/pg-core";
 
 export const majors = pgTable('majors', {
     id: serial('id').primaryKey(),
@@ -34,15 +34,36 @@ export const schedules = pgTable('schedules', {
     id: serial('id').primaryKey(),
     scheduleName: text("schedule_name"),
     totalCredits: integer("total_credits"),
-    userId: uuid('user_id').notNull().references(() => users.id),
-    studentInfoId: uuid('studentinfo_id').notNull().references(() => studentInfo.id)
+    userId: integer('user_id').notNull().references(() => users.id),
+    studentInfoId: integer('studentinfo_id').notNull().references(() => studentInfo.id)
 });
 
-export const studentInfo = pgTable('studentInfo', {
+export const studentInfo = pgTable('studentinfo', {
     id: serial('id').primaryKey(),
     gradYear: integer('grad_year').notNull(),
-    currYear: integer('curr_year').notNull(),
     interests: text('interests'),
-    majorId: uuid('major_id').notNull().references(() => majors.id),
-    minorId: uuid('minor_id').notNull().references(() => minors.id)
+    program: text('program'),
+    majorId: integer('major_id').notNull().references(() => majors.id),
+    minorId: integer('minor_id').references(() => minors.id)
 });
+
+export const semesters = pgTable('semesters', {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+    index: integer('index'),
+    scheduleId: integer('schedule_id').notNull().references(() => schedules.id)
+});
+
+export const semesterCourses = pgTable('semester_courses', {
+    semesterId: integer('semester_id').notNull().references(() => semesters.id),
+    courseId: integer('course_id').notNull().references(() => courses.id),
+}, (t) => [
+    primaryKey({ columns: [t.semesterId, t.courseId] }) // config callback, define table level constraints
+]);
+
+export const coursePrerequisites = pgTable('course_prerequisites', {
+    courseId: integer('course_id').notNull().references(() => courses.id),
+    prerequisiteId: integer('prerequisite_id').notNull().references(() => courses.id),
+}, (t) => [
+    primaryKey({ columns: [t.courseId, t.prerequisiteId] })
+]);

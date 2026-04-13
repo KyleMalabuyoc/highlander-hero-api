@@ -1,10 +1,9 @@
-import { PgColumn } from "drizzle-orm/pg-core";
 import { db } from "../config/db.js";
 import redis from "../config/redis.js"
 import { users } from "../config/schema.js";
 import { eq } from "drizzle-orm";
 
-export const getUserId = async (sub: string | undefined, username: string | undefined) => {
+export const getUserId = async (sub: string | undefined, username: string | undefined): Promise<number> => {
 
     // check cache
     // if not present, query for it, store in cache, return it
@@ -33,6 +32,7 @@ export const getUserId = async (sub: string | undefined, username: string | unde
         return userid[0].id;
 
     } catch(e) {
+        return -1;
         console.error(e);
     }
 

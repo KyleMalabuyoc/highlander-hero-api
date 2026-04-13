@@ -7,7 +7,7 @@ export interface Course {
     description: string,
     credits: number,
     status: 'complete' | 'in-progress' | 'failed' | 'n/a',
-    prerequisites: Course[], // circular reference -> might want to have a list of ids here, resolve when needed
+    prerequisite: number[],
     type: CourseType,
     jobRelevancy?: string // build this response on the API side
 }

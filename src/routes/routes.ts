@@ -1,7 +1,7 @@
 import { Router } from "express";
 import * as auth from "../controllers/AuthController.js";
 import { getCourses, getMajors, getMinors } from "../controllers/AcademicsController.js";
-import { getSchedules, saveNewSchedule } from "../controllers/ScheduleController.js";
+import { getSchedules, createNewSchedule, editNewSchedule } from "../controllers/ScheduleController.js";
 import { validateAccess } from "../middleware/authenticate.js";
 
 const router = Router();
@@ -18,8 +18,8 @@ router.post(authPrefix + "/logout", auth.logout);
 
 // Schedules
 router.get("/schedules", validateAccess, getSchedules);
-router.post("/new/schedule", validateAccess, saveNewSchedule);
-// update schedule API
+router.post("/new/schedule", validateAccess, createNewSchedule);
+router.post("/edit/schedule", validateAccess, editNewSchedule);
 
 // Courses / Majors / Minors
 router.get("/courses", validateAccess, getCourses);

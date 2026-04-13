@@ -1,13 +1,12 @@
+import { Major, Minor } from "./AcademicProgram.js";
 import { Course } from "./Course.js";
 
 export interface StudentInfo {
-    major: string,
-    minor: string,
+    major: Major,
+    minor: Minor,
     graduationYear: number,
-    currentYear?: string,
-    interests: Course[],
-    transfer?: boolean,
-    currentCredits?: number
+    program: string, // undergraduate, masters
+    interests: string[]
 }
 
 export interface UseStudentInfoStore {

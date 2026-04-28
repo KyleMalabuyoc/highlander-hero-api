@@ -107,7 +107,7 @@ export const editSchedule = async (schedule: Schedule, semesterIndex: number, qu
 
                     Behavior: Respond as a knowledgeable academic advisor. NEVER mention Pinecone, databases, APIs, embeddings, or any technical implementation detail — the student should never be aware of how this works internally. 
                     Rules:
-                        1. Do not suggest courses that are already within the stuents full current schedule.
+                        1. Do NOT suggest courses that are already within the students full current schedule.
 
                     ## Student Request
                     ${ query }

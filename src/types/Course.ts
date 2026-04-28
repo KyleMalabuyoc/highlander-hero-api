@@ -6,8 +6,8 @@ export interface Course {
     code: number,
     description: string,
     credits: number,
-    status: 'complete' | 'in-progress' | 'failed' | 'n/a',
-    prerequisite: number[],
-    type: CourseType,
+    status: string,
+    prerequisites: Course[],
+    type: string,
     jobRelevancy?: string // build this response on the API side
 }

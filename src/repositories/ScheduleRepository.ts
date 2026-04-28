@@ -1,36 +1,65 @@
 // getSchedules
 import { Request } from "express";
-import { Schedule, ScheduleSchema, Semester, StudentInfo } from '../config/zod-schema.js';
+// import { Schedule } from '../config/zod-schema.js';
 import { db } from "../config/db.js";
 import { coursePrerequisites, courses, majors, minors, schedules, semesterCourses, semesters, studentInfo, users } from "../config/schema.js";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { NewScheduleRequest } from "../types/requests/NewScheduleRequest.js";
-import { PgColumn, PgTable } from "drizzle-orm/pg-core";
+import { alias } from "drizzle-orm/pg-core";
+import { Schedule } from "../types/Schedule.js";
 
 export const getSchedules = async (userid: number): Promise<Schedule[]> => {
 
     try {
 
+        const prereqCourses = alias(courses, 'prereq_courses');
+
         const result = await db.select({
-            scheduleId:      schedules.id,
-            scheduleName:    schedules.scheduleName,
-            major:           majors,
-            minor:           minors,
-            studentInfo:     studentInfo,
-            semester:        semesters,
-            courses:         courses,
-            prerequisiteId: coursePrerequisites.prerequisiteId
+            scheduleId:         schedules.id,
+            scheduleName:       schedules.scheduleName,
+            majorId:            majors.id,
+            majorName:          majors.name,
+            majorDescription:   majors.description,
+            majorReqCreds:      majors.reqCreds,
+            minorId:            minors.id,
+            minorName:          minors.name,
+            minorDescription:   minors.description,
+            minorReqCreds:      minors.reqCreds,
+            gradYear:           studentInfo.gradYear,
+            program:            studentInfo.program,
+            interests:          studentInfo.interests,
+            semesterId:         semesters.id,
+            semesterName:       semesters.name,
+            semesterIndex:      semesters.index,
+            courseId:           courses.id,
+            courseName:         courses.name,
+            courseCode:         courses.code,
+            courseDescription:  courses.description,
+            courseCredits:      courses.credits,
+            courseStatus:       courses.status,
+            courseType:         courses.type,
+            courseJobRelevancy: courses.jobRelevancy,
+            prerequisites:      sql<number[]>`array_agg(${prereqCourses.id}) filter (where ${prereqCourses.id} is not null)`
         })
         .from(schedules)
         .innerJoin(studentInfo, eq(studentInfo.id, schedules.studentInfoId))
-        .innerJoin(semesters, eq(semesters.scheduleId, schedules.id))
         .innerJoin(majors, eq(majors.id, studentInfo.majorId))
-        .leftJoin(minors, eq(minors.id,  studentInfo.minorId))
+        .leftJoin(minors, eq(minors.id, studentInfo.minorId))
+        .innerJoin(semesters, eq(semesters.scheduleId, schedules.id))
         .innerJoin(semesterCourses, eq(semesterCourses.semesterId, semesters.id))
         .innerJoin(courses, eq(courses.id, semesterCourses.courseId))
         .leftJoin(coursePrerequisites, eq(coursePrerequisites.courseId, courses.id))
-        // need a left join for prereqs because even if a course doesnt have a prereq, we want it to show up
+        .leftJoin(prereqCourses, eq(prereqCourses.id, coursePrerequisites.prerequisiteId))
         .where(eq(schedules.userId, userid))
+        .groupBy(
+            schedules.id, schedules.scheduleName,
+            majors.id, majors.name, majors.description, majors.reqCreds,
+            minors.id, minors.name, minors.description, minors.reqCreds,
+            studentInfo.gradYear, studentInfo.program, studentInfo.interests,
+            semesters.id, semesters.name, semesters.index,
+            courses.id, courses.name, courses.code, courses.description,
+            courses.credits, courses.status, courses.type, courses.jobRelevancy
+        )
         .orderBy(asc(semesters.index));
 
         console.log("Result from DB", result);
@@ -39,57 +68,48 @@ export const getSchedules = async (userid: number): Promise<Schedule[]> => {
 
         result.forEach((r) => {
 
-            if (scheduleMap.get(r.scheduleId) === undefined) {
-
+            if (!scheduleMap.has(r.scheduleId)) {
                 scheduleMap.set(r.scheduleId, {
                     name: r.scheduleName,
                     studentInfo: {
-                        major: r.major,
-                        minor: r.minor,
-                        graduationYear: r.studentInfo.gradYear,
-                        program: r.studentInfo.program, // undergraduate, masters
-                        interests: r.studentInfo.interests
+                        major: { id: r.majorId, name: r.majorName, description: r.majorDescription, reqCreds: r.majorReqCreds },
+                        minor: r.minorId ? { id: r.minorId, name: r.minorName!, description: r.minorDescription!, reqCreds: r.minorReqCreds! } : null,
+                        graduationYear: r.gradYear,
+                        program: r.program,
+                        interests: r.interests ? r.interests.split(',').filter(Boolean) : null
                     },
                     semesters: new Map()
                 });
-
             }
 
-            let semesterMap = scheduleMap.get(r.scheduleId).semesters as Map<number, any>;
-            
-            if (semesterMap.get(r.semester.id) === undefined) {
-                semesterMap.set(r.semester.id, {
-                    name: r.semester.name,
-                    index: r.semester.index,
-                    courses: new Map()
+            const semesterMap = scheduleMap.get(r.scheduleId).semesters;
+
+            if (!semesterMap.has(r.semesterId)) {
+                semesterMap.set(r.semesterId, {
+                    name: r.semesterName,
+                    index: r.semesterIndex,
+                    courses: []
                 });
             }
 
-            let coursesMap = semesterMap.get(r.semester.id).courses;
-
-            if (coursesMap.get(r.courses.id) === undefined) {
-                coursesMap.set(r.courses.id, {
-                    ...r.courses,
-                    prerequisites: []
-                });
-            }
-
-            if (r.prerequisiteId != null) {
-                coursesMap.get(r.courses.id).prerequisites.push(r.prerequisiteId);
-            }
+            semesterMap.get(r.semesterId).courses.push({
+                id: r.courseId,
+                name: r.courseName,
+                code: r.courseCode,
+                description: r.courseDescription,
+                credits: r.courseCredits,
+                status: r.courseStatus,
+                type: r.courseType,
+                jobRelevancy: r.courseJobRelevancy,
+                prerequisites: r.prerequisites ?? []
+            });
 
         });
 
         const userSchedules: Schedule[] = [...scheduleMap.values()].map((schedule) => ({
             ...schedule,
-            semesters: ([...schedule.semesters.values()] as Semester[])
-                .map((semester) => ({
-                    ...semester,
-                    courses: [...semester.courses.values()]
-            }))
+            semesters: [...schedule.semesters.values()]
         }));
-
-        console.log("Found schedules:", userSchedules);
 
         return userSchedules;
 
@@ -106,8 +126,6 @@ export const saveNewSchedule = async (newSchedule: Schedule, userid: number | un
         if (userid === undefined) {
             throw new Error("User ID is missing. Cannot save.");
         }
-
-        console.log("Schedule to save, ", newSchedule);
 
         // grab major id and minor id, and then store student info -> returns studentinfo id of the row we just inserted
         // store the schedule with the userid, and the studentinfo id, return schedule id

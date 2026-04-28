@@ -67,3 +67,21 @@ export const coursePrerequisites = pgTable('course_prerequisites', {
 }, (t) => [
     primaryKey({ columns: [t.courseId, t.prerequisiteId] })
 ]);
+
+export const majorRequirements = pgTable('major_requirements', {
+    majorId: integer('major_id').notNull().references(() => majors.id),
+    courseId: integer('course_id').notNull().references(() => courses.id),
+    yearIndex: integer('year_index').notNull(),
+    semesterIndex: integer('semester_index').notNull()
+}, (t) => [
+    primaryKey({ columns: [t.majorId, t.courseId] })
+]);
+
+export const minorRequirements = pgTable('minor_requirements', {
+    minorId: integer('minor_id').notNull().references(() => minors.id),
+    courseId: integer('course_id').notNull().references(() => courses.id),
+    yearIndex: integer('year_index').notNull(),
+    semesterIndex: integer('semester_index').notNull()
+}, (t) => [
+    primaryKey({ columns: [t.minorId, t.courseId] })
+]);

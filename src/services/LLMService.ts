@@ -4,133 +4,260 @@ import { pinecone_index } from '../config/pinecone.js';
 import { NewScheduleRequest } from '../types/requests/NewScheduleRequest.js';
 import { StudentInfo } from '../types/StudentInfo.js';
 import { scheduleCreationSystemPrompt, scheduleEditSystemPrompt } from '../utils/prompts.js';
-import { EditScheduleLLMResponse, EditScheduleLLMResponseSchema, Schedule, ScheduleLLMResponse, ScheduleLLMResponseSchema, ScheduleSchema } from '../config/zod-schema.js';
-import { studentInfo } from '../config/schema.js';
+import { EditScheduleLLMResponseSchema, ScheduleLLMResponse, ScheduleLLMResponseSchema, ScheduleSchema, Suggestion } from '../config/zod-schema.js';
+import { courses, majorRequirements } from '../config/schema.js';
+import { db } from '../config/db.js';
+import { inArray } from 'drizzle-orm';
 import * as academicService from './AcademicsService.js';
+import { ChatCompletionMessageParam } from 'openai/resources';
+import { get_course_tool, getCoursesTool } from './tools/get_courses.js';
+import { Course } from '../types/Course.js';
+import * as academicRepository from "../repositories/AcademicsRepository.js";
+import { year } from 'drizzle-orm/mysql-core';
+import { Semester } from '../types/Semester.js';
+import { Schedule } from '../types/Schedule.js';
+import { QueryResponse, RecordMetadata } from '@pinecone-database/pinecone';
+import * as pineconeService from './PineconeService.js';
+import redis from '../config/redis.js';
 
-export const createSchedule = async (newScheduleRequest: NewScheduleRequest): Promise<Schedule> => {
+type RequiredCourse = Awaited<ReturnType<typeof academicRepository.getMajorRequiredCourses>>[number];
 
-    // embed our requests in order for pinecone to understand
-    // send our query to pinecone
-    // store pinecone context
-    // feed pinecone context as a part of the open ai api call
+export const createSchedule = async (newScheduleRequest: NewScheduleRequest) => {
 
-    console.log("Query for pinecone before embedding: ", formatForPineconeBeforeEmbedding(newScheduleRequest.studentInfo));
+     try {
 
-    // embed
-    // const embedding = await openai.embeddings.create({
-    //     model: "text-embedding-3-small",
-    //     input: formatForPineconeBeforeEmbedding(newScheduleRequest.studentInfo),
-    //     encoding_format: "float",
-    // });
+        const requiredCoursesForMajor = await academicRepository.getMajorRequiredCourses(newScheduleRequest.studentInfo.major.id);
+        let semesterMap: Map<number, { semesterIndex: number, courses: Course[] }> = new Map();
 
-    // const queryVector = embedding.data[0].embedding;
+        requiredCoursesForMajor.forEach((c) => {
 
-    // maybe some calculatred top K depending on query coming in. for concise queries without a lot of
-    // ambiguity, only get top 3, but for othgers, higher amount of results
+            if (c.yearIndex !== null && c.semesterIndex !== null) {
 
-    // pinecone for augmentation
-    // const results = await pinecone_index.query({
-    //     vector: queryVector,
-    //     topK: 10,
-    //     includeMetadata: true
-    // });
+                const mapID = c.yearIndex * 10 + c.semesterIndex;
+                
+                if (semesterMap.get(mapID) === undefined) {
+                    const { yearIndex, semesterIndex, ...course} = c;
+                    semesterMap.set(mapID, { semesterIndex: c.semesterIndex, courses: [course] });
+                } else {
+                    const currMapValue = semesterMap.get(mapID)?.courses ?? [];
+                    const { yearIndex, semesterIndex, ...course} = c;
+                    semesterMap.set(mapID, { semesterIndex: semesterIndex, courses: [...currMapValue, course] });
+                }
 
-    // construct context object 
-    // pass it along to openAI call
-
-    // const relative_context = results.matches.map((m) => { return { parent: m.id, metadata: m.metadata }});
-
-    // more context
-    const courseCatalog = (await academicService.getCourses()).data;
-    const currentYear = new Date().getFullYear();
-
-// Course Catalog: ${ JSON.stringify(courseCatalog) }
-
-    // .responses => newer chat completions API
-    const response = await openai.chat.completions.create({
-        model: "gpt-4o-2024-08-06", // model recommended by Claude for this task
-        messages: [
-            { role: "system", content: scheduleCreationSystemPrompt },
-            { role: "user", content: `
-                User Query: ${ formatForPineconeBeforeEmbedding(newScheduleRequest.studentInfo) }
-                Current Year: ${currentYear}
-                Schedule Name: ${ newScheduleRequest.scheduleName }
-                Generate me a full degree schedule based off of the user query and the instructions I have given you.
-                Use the schedule name provided.
-            `
             }
-        ],
-        temperature: 0, // ??
-        response_format: zodResponseFormat(ScheduleLLMResponseSchema, "schedule") // using zod for schema builder
-    });
 
-    // Relative Context: ${JSON.stringify(relative_context)}. data coming from RAG pipeline is no good.
-    // its actually polluting the response.
+        });
 
-    // add disclaimer: This schedule is a general guide and should be tailored to meet individual needs and academic goals. Always consult with an academic advisor to ensure all degree requirements are met.
-    const scheduleResponseFromLLM = JSON.parse(response.choices[0].message.content ?? "{}") as ScheduleLLMResponse;
+        // create semesters array
+        const semesters: Semester[] = Array.from(semesterMap.entries()).sort((a, b) => {
+            return a[0] - b[0];
+        }).map(([key, semester]) => {
+            return {
+                name: '',
+                yearIndex: (key - semester.semesterIndex) / 10,
+                index: semester.semesterIndex,
+                courses: semester.courses
+            }
+        });
 
-    // need to manually add student info. we dont need to send it the studentInfo, thast already provided in the user query.
-    const schedule = { ...scheduleResponseFromLLM, studentInfo: newScheduleRequest.studentInfo };
+        let defaultSchedule = {
+            name: newScheduleRequest.scheduleName,
+            semesters: semesters,
+            studentInfo: newScheduleRequest.studentInfo
+        };
 
-    return schedule;
+        const pineconeResults = await pineconeService.pineconeQueryForScheduleCreation(newScheduleRequest.studentInfo);
+        const schedule = await scheduleEnrichment(newScheduleRequest, defaultSchedule, pineconeResults);
+
+        return schedule;
+
+    } catch(e) {
+        // TODO
+        console.error(e);
+        return {} as Schedule;
+    }
+
 }
 
 export const editSchedule = async (schedule: Schedule, semesterIndex: number, query: string) => {
 
-    // Build a flat list of every course already in the schedule for explicit prompt injection + post-filter
-    const allCourseIds = new Set<number>();
-    const allCourseNames: string[] = [];
-    for (const semester of schedule.semesters) {
-        for (const course of semester.courses) {
-            allCourseIds.add(course.id);
-            allCourseNames.push(`- ${course.name} (id: ${course.id})`);
-        }
-    }
-    const existingCoursesBlock = allCourseNames.join('\n');
+    try {
 
-    const response = await openai.chat.completions.create({
-        model: "gpt-4o-2024-08-06",
-        messages: [
-            { role: "system", content: scheduleEditSystemPrompt },
-            { role: "user", content: `
-                ## Student Request
-                ${query}
-
-                ## Semester Being Edited
-                ${JSON.stringify(schedule.semesters[semesterIndex], null, 2)}
-
-                ## ALL Courses Already In The Schedule (DO NOT propose any of these)
-                ${existingCoursesBlock}
-
-                ## Full Schedule (for context)
-                ${JSON.stringify(schedule, null, 2)}
-
-                Edit the semester based on the student's request. Follow all rules in the system prompt.
-                IMPORTANT: Every course listed under "ALL Courses Already In The Schedule" is off-limits as a proposed course. If no valid swap exists, explain why in \`content\` and return an empty \`suggestions\` array.
-            `
+        // Build a flat list of every course already in the schedule for explicit prompt injection + post-filter
+        const allCourseNames: string[] = [];
+        for (const semester of schedule.semesters) {
+            for (const course of semester.courses) {
+                // allCourseIds.add(course.id);
+                allCourseNames.push(`${course.name}`);
             }
-        ],
-        temperature: 0,
-        response_format: zodResponseFormat(EditScheduleLLMResponseSchema, "suggestions")
-    });
+        }
+        const existingCoursesBlock = allCourseNames.join('\n');
 
-    const scheduleResponseFromLLM = JSON.parse(response.choices[0].message.content ?? "{}") as EditScheduleLLMResponse;
+        // pinecone DB call -> pass query
+        // in thr query, pass the students major and minor if applciable??
+        const pineconeMetadataText = (await pineconeService.simplePineconeCall(query, 3)).matches.map((m) => m.metadata?.text);
 
-    // // Safety net: strip any suggestions where the proposed course is already in the schedule
-    // scheduleResponseFromLLM.suggestions = scheduleResponseFromLLM.suggestions.filter(
-    //     (s) => s.proposedCourse === null || !allCourseIds.has(s.proposedCourse.id)
-    // );
+        console.log(pineconeMetadataText);
 
-    console.log("Edit response", scheduleResponseFromLLM);
-    return scheduleResponseFromLLM;
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-2024-08-06",
+            messages: [
+                { role: "system", content: scheduleEditSystemPrompt },
+                { role: "user", content: `
+
+                    Behavior: Respond as a knowledgeable academic advisor. NEVER mention Pinecone, databases, APIs, embeddings, or any technical implementation detail — the student should never be aware of how this works internally. 
+                    Rules:
+                        1. Do not suggest courses that are already within the stuents full current schedule.
+
+                    ## Student Request
+                    ${ query }
+
+                    ## Semester Being Edited
+                    ${ JSON.stringify(schedule.semesters[semesterIndex], null, 2) }
+
+                    ## Student Full Current Schedule
+                    ${ JSON.stringify(schedule, null, 2) }
+
+                    ## Pinecone Text
+                    ${ pineconeMetadataText }
+                `
+                }
+            ],
+            temperature: 0,
+            response_format: zodResponseFormat(EditScheduleLLMResponseSchema, "suggestions")
+        });
+
+        const scheduleResponseFromLLM = JSON.parse(response.choices[0].message.content ?? "{}");
+
+        console.log(scheduleResponseFromLLM);
+
+        // only need to make cache or DB call if suggestions is populated.
+        if (scheduleResponseFromLLM.suggestions.length > 0) {
+
+            // check if cache has courses available
+            const courses = await redis.get<Course[]>(`courses:all`);
+            const coursesMap = new Map<string, Course>(courses?.map((c) => [c.name, c]));
+            const updatedSuggestions = scheduleResponseFromLLM.suggestions.map((s: Suggestion) => ({
+                ...s,
+                originalCourse: s.originalCourse !== null ? coursesMap.get(s.originalCourse.name) : null,
+                proposedCourse: s.proposedCourse !== null ? coursesMap.get(s.proposedCourse.name) : null
+            }));
+            const finalSchedule = {
+                ...scheduleResponseFromLLM,
+                suggestions: updatedSuggestions
+            };
+        //     // for now - we assume courses in cache always available since we call it on login with 24hr expiry
+        //     // if we run into issues where courses in cache isnt available for some reason we'll query DB directly
+        }
+
+        return scheduleResponseFromLLM;
+
+        return {};
+
+    } catch(e) {
+        console.error(e);
+    }
+
 }
 
-const formatForPineconeBeforeEmbedding = (req: StudentInfo) => {
-    const { major, minor, graduationYear, interests, program } = req;
-    const parts = [`I am a ${program} student studying ${major?.name}. Graduating in ${graduationYear}.`];
-    if (minor?.name) parts.push(`Minor in ${minor.name}.`);
-    if (interests?.length) parts.push(`Interests: ${interests.join(", ")}.`);
-    return parts.join(" ");
+const scheduleEnrichment = async (newScheduleRequest: NewScheduleRequest, 
+    defaultSchedule: Schedule, pineconeResults: QueryResponse<RecordMetadata>[]) => {
+
+    const currentYear = new Date().getFullYear();
+
+    try {
+
+        const slimSchedule = {
+            semesters: defaultSchedule.semesters.map(s => ({
+                index: s.index,
+                yearIndex: s.yearIndex,
+                courses: s.courses.map(c => ({ name: c.name, credits: c.credits, type: c.type, prerequisites: c.prerequisites.map((p) => p.name) }))
+            }))
+        };
+
+        const [majorPineconeMetadata, minorPineconeMetadata] = pineconeResults;
+        const majorPineconeCourseNames = majorPineconeMetadata.matches[0].metadata?.course_names as string[];
+        const minorPineconeCourseNames = minorPineconeMetadata ? minorPineconeMetadata.matches[0].metadata?.course_names as string[] : [];
+
+        // hit cache instead
+        const consolidateCourses = (await academicRepository.getCourseByColumn([...majorPineconeCourseNames, ...minorPineconeCourseNames] as string[], "name"));
+        const courseMap = new Map(consolidateCourses.map((c) => ([c.name, c])));
+
+        console.log("SLIM SCHEDULE", slimSchedule);
+        console.log("REQUIRED COURSES", consolidateCourses);
+        console.log("PINECONE CONTEXT MAJOR", majorPineconeMetadata.matches.map(m => m.metadata?.text));
+        console.log("PINECONE CONTEXT MINOR", minorPineconeMetadata?.matches.map(m => m.metadata?.text));
+
+        const hasMinor = !!newScheduleRequest.studentInfo.minor;
+
+        // .responses => newer chat completions API
+        const buildScheduleLLMResponse = await openai.chat.completions.create({
+            model: "gpt-4o-2024-08-06",
+            messages: [
+                { role: "system", content: scheduleCreationSystemPrompt },
+                { role: "user", content: `
+
+                    Major: ${ newScheduleRequest.studentInfo.major.name }
+                    ${ hasMinor ? `Minor: ${ newScheduleRequest.studentInfo.minor!.name }` : '' }
+                    Interests: ${ newScheduleRequest.studentInfo.interests && newScheduleRequest.studentInfo.interests.length > 0 ?
+                        newScheduleRequest.studentInfo.interests.join(',') : 'none'
+                    }
+                    Graduation Year: ${ newScheduleRequest.studentInfo.graduationYear }
+
+                    ## Current Year
+                    ${ currentYear }
+
+                    ## Schedule Name
+                    ${ newScheduleRequest.scheduleName }
+
+                    ## Pinecone Results for Major
+                    ${ JSON.stringify(majorPineconeMetadata.matches.map(m => m.metadata?.text)) }
+
+                    ${ hasMinor ? `## Pinecone Results for Minor\n${ JSON.stringify(minorPineconeMetadata!.matches.map(m => m.metadata?.text)) }` : '' }
+
+                    ## Current Schedule
+                    ${ JSON.stringify(slimSchedule) }
+
+                    ## All Major Courses
+                    ${ JSON.stringify(majorPineconeCourseNames) }
+
+                    ${ hasMinor ? `## All Minor Courses\n${ JSON.stringify(minorPineconeCourseNames) }` : '' }
+
+                `
+                }
+            ],
+            temperature: 0, // ??
+            response_format: zodResponseFormat(ScheduleLLMResponseSchema, "schedule") // using zod for schema builder
+        });
+
+        // add disclaimer: This schedule is a general guide and should be tailored to meet individual needs and academic goals. Always consult with an academic advisor to ensure all degree requirements are met.
+        const scheduleResponseFromLLM: ScheduleLLMResponse = JSON.parse(buildScheduleLLMResponse.choices[0].message.content ?? "{}");
+
+        console.log("RESPONSE FROM LLM", scheduleResponseFromLLM);
+
+        scheduleResponseFromLLM?.semesters.forEach((s) => {
+            console.log(s.courses);
+        });
+
+        // // need to manually add student info. we dont need to send it the studentInfo, thast already provided in the user query.
+        const schedule = {
+            ...scheduleResponseFromLLM,
+            semesters: scheduleResponseFromLLM.semesters.map((s, idx) => ({
+                ...s,
+                index: idx,
+                courses: s.courses.map(c => courseMap.get(c.name) ?? c)
+            })),
+            studentInfo: newScheduleRequest.studentInfo
+        };
+
+        return schedule;
+
+        return {} as Schedule;
+
+    }catch(e) {
+        console.error(e);
+        return {} as Schedule;
+    }
+    
+
 }

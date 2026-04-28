@@ -5,6 +5,7 @@ import { coursePrerequisites, courses, majors, minors } from "../config/schema.j
 import { Major, Minor } from "../types/AcademicProgram.js";
 import { Course } from "../types/Course.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
+import * as academicRepository from "../repositories/AcademicsRepository.js";
 
 export const getCourses = async (): Promise<ResponseEntity> => {
 
@@ -21,29 +22,24 @@ export const getCourses = async (): Promise<ResponseEntity> => {
         console.error(err);
     }
     
+    // cache not available
     try {
 
-        const res = await db.select()
-                    .from(courses)
-                    .innerJoin(coursePrerequisites, eq(coursePrerequisites.courseId, courses.id));
-
+        const res = await academicRepository.getCourses();
         const coursesMap = new Map();
 
         res.forEach((r) => {
 
             if (coursesMap.get(r.courses.id) === undefined) {
-                // add new course object to map
                 coursesMap.set(r.courses.id, { ...r.courses, prerequisites: [] }) 
             }
 
-            let cmPrereqs = coursesMap.get(r.courses.id).prerequisites;
-            cmPrereqs.push(r.course_prerequisites.prerequisiteId);
+            let cmPrereqs = coursesMap.get(r.courses.id)?.prerequisites;
+            cmPrereqs?.push(r.course_prerequisites.prerequisiteId);
         });
 
         const allCourses = Array.from(coursesMap.values());
-  
         await redis.set(`courses:all`, JSON.stringify(allCourses),  { ex: Number(process.env.UPSTASH_REDIS_EXPIRY) });
-
         return new ResponseEntity(200, allCourses);
 
     } catch(err) {
@@ -72,10 +68,8 @@ export const getMajors = async (): Promise<ResponseEntity> => {
 
     try {
 
-        const res = await db.select().from(majors);
-
+        const res = await academicRepository.getMajors();
         await redis.set(`majors:all`, JSON.stringify(res), { ex: Number(process.env.UPSTASH_REDIS_EXPIRY) });
-
         return new ResponseEntity(200, res);
 
     } catch(err) {
@@ -102,10 +96,8 @@ export const getMinors = async (): Promise<ResponseEntity> => {
 
     try {
 
-        const res = await db.select().from(minors);
-
+        const res = await academicRepository.getMinors();
         await redis.set(`minors:all`, JSON.stringify(res), { ex: Number(process.env.UPSTASH_REDIS_EXPIRY) });
-
         return new ResponseEntity(200, res);
 
     } catch(err) {

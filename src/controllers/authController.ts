@@ -3,7 +3,31 @@ import * as authService from '../services/AuthService.js';
 
 // authentication - grabs tokens
 export const login = async (req: Request, res: Response) => {
-    res.status(200).json(await authService.login(req.body.email, req.body.password));
+
+    try {
+
+        const loginResponseEntity = await authService.login(req.body.email, req.body.password);
+        const { refreshToken } = loginResponseEntity.data.access;
+
+        // set httponly cookie for refreshtoken to be stored in browser
+
+        if (refreshToken && loginResponseEntity?.status === 200) {
+            res.cookie('refreshToken', refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                maxAge: 7 * 24 * 60 * 60 * 1000
+            });
+
+            // remove refreshtoken from body of response entity
+            delete loginResponseEntity.data.access.refreshToken;
+        }
+        
+        res.status(200).json(loginResponseEntity);
+        
+    } catch(err) {
+        console.error(err);
+    }
 }
 
 // confirm confirmation code from registration
@@ -22,12 +46,18 @@ export const cancel = async (req: Request, res: Response) => {
 }
 
 // refresh token if access token expires
-export const refresh = (req: Request, res: Response) => {
-    res.status(200).json(authService.refresh(req.body));
+export const refresh = async (req: Request, res: Response) => {
+    res.status(200).json(await authService.refresh(req));
 }
 
-export const logout = (req: Request, res: Response) => {
-    res.status(200).json(authService.logout(req.body));
+export const logout = async (req: Request, res: Response) => {
+    // on logout - remove refresh token from browser
+    res.clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict'
+    });
+    res.status(200).json(await authService.logout(req));
 }
 
 // new user registration

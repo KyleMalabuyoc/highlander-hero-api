@@ -25,5 +25,3 @@ npm-debug.log*
 # Build outputs
 dist/
 build/
-
-CLAUDE.md

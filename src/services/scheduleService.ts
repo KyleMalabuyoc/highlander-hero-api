@@ -5,8 +5,8 @@ import { db } from "../config/db.js";
 import { schedules, users } from "../config/schema.js";
 import { eq } from "drizzle-orm";
 import { ResponseEntity } from "../types/ResponseEntity.js";
-import { NewScheduleRequest } from "../types/requests/NewScheduleRequest.js";
 import * as llmService from './LLMService.js';
+import { Schedule } from "../types/Schedule.js";
 
 export const getSchedules = async (req: Request): Promise<ResponseEntity> => {
 
@@ -27,10 +27,16 @@ export const createNewSchedule = async (req: Request): Promise<ResponseEntity> =
         const userid = await userRepository.getUserId(req.user?.sub, req.user?.username);
         
         // save new schedule
-        scheduleRepository.saveNewSchedule(schedule, userid);
+        const scheduleId = await scheduleRepository.saveNewSchedule(schedule, userid);
 
-        return new ResponseEntity(200, schedule);
+        // updating prerequisites object to return list of ids rather than list of courses. we resolve it on the UI
+        const coursesWithListofIdsForPreq = schedule.semesters.map((s) => ({
+            ...s,
+            courses: s.courses.map((c) => ({...c, prerequisites: c.prerequisites.map((p) => p.id)}))
+        }));
 
+        return new ResponseEntity(200, {...schedule, id: scheduleId, semesters: coursesWithListofIdsForPreq });
+ 
     } catch(err) {
 
         return new ResponseEntity(500, "Internal Server Error.");
@@ -38,7 +44,7 @@ export const createNewSchedule = async (req: Request): Promise<ResponseEntity> =
 
 }
 
-export const editSchedule = async (req: Request): Promise<ResponseEntity> => {
+export const llmEditSchedule = async (req: Request): Promise<ResponseEntity> => {
 
     try {
 
@@ -49,5 +55,26 @@ export const editSchedule = async (req: Request): Promise<ResponseEntity> => {
 
         return new ResponseEntity(500, "Internal Server Error.");
     }
+
+}
+
+export const updateSchedule = async (req: Request): Promise<ResponseEntity> => {
+
+    try {
+
+        
+
+        // call repository to handle DB calls
+        const updated = await scheduleRepository.updateSchedule(req.body);
+        return new ResponseEntity(200, updated);
+
+    } catch(e) {
+
+        // logs
+        console.error(e);
+
+        return new ResponseEntity(500, false, "Internal Server Error.");
+    }
+
 
 }

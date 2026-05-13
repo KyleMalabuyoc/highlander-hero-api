@@ -33,7 +33,6 @@ export const getUserId = async (sub: string | undefined, username: string | unde
 
     } catch(e) {
         return -1;
-        console.error(e);
     }
 
 }  

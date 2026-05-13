@@ -14,7 +14,8 @@ export const validateAccess = async (req: Request, res: Response, next: NextFunc
         clientId: process.env.AWS_COGNITO_CLIENT_ID ?? ''
        });
 
-       req.user = await verifier.verify(accessToken);;
+       req.user = await verifier.verify(accessToken);
+
        next();
 
     } catch(err) {
@@ -23,9 +24,7 @@ export const validateAccess = async (req: Request, res: Response, next: NextFunc
             console.error(err);
         }
 
-        // throw some error message
-
-        return;
+        return res.status(401).json({ status: 401, message: "Invalid access token." });
     }
 
 

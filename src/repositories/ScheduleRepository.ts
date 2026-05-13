@@ -3,15 +3,16 @@ import { Request } from "express";
 // import { Schedule } from '../config/zod-schema.js';
 import { db } from "../config/db.js";
 import { coursePrerequisites, courses, majors, minors, schedules, semesterCourses, semesters, studentInfo, users } from "../config/schema.js";
-import { asc, eq, sql } from "drizzle-orm";
-import { NewScheduleRequest } from "../types/requests/NewScheduleRequest.js";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { Schedule } from "../types/Schedule.js";
+import { UpdateScheduleRequest } from "../types/requests/Requests.js";
 
 export const getSchedules = async (userid: number): Promise<Schedule[]> => {
 
     try {
 
+        // so we dont get confused when we join courses table for prereqs
         const prereqCourses = alias(courses, 'prereq_courses');
 
         const result = await db.select({
@@ -62,7 +63,7 @@ export const getSchedules = async (userid: number): Promise<Schedule[]> => {
         )
         .orderBy(asc(semesters.index));
 
-        console.log("Result from DB", result);
+        // console.log("Result from DB", result);
 
         const scheduleMap = new Map();
 
@@ -86,6 +87,7 @@ export const getSchedules = async (userid: number): Promise<Schedule[]> => {
 
             if (!semesterMap.has(r.semesterId)) {
                 semesterMap.set(r.semesterId, {
+                    id: r.semesterId,
                     name: r.semesterName,
                     index: r.semesterIndex,
                     courses: []
@@ -119,9 +121,11 @@ export const getSchedules = async (userid: number): Promise<Schedule[]> => {
     }
 }
 
-export const saveNewSchedule = async (newSchedule: Schedule, userid: number | undefined): Promise<boolean> => {
+export const saveNewSchedule = async (newSchedule: Schedule, userid: number | undefined): Promise<number> => {
 
     try {
+
+        let scheduleID = 0;
 
         if (userid === undefined) {
             throw new Error("User ID is missing. Cannot save.");
@@ -154,6 +158,8 @@ export const saveNewSchedule = async (newSchedule: Schedule, userid: number | un
                 studentInfoId: studentInfoEntry.id
             }).returning();
 
+            scheduleID = scheduleEntry.id;
+
             // we just inserted the schedule - we now have the id. time to start storing semesters
             /// loop through all of the semesters, storing erach one one by one
             for (const semester of newSchedule.semesters) {
@@ -166,7 +172,6 @@ export const saveNewSchedule = async (newSchedule: Schedule, userid: number | un
 
                 // need another loop to go torugh all classes that are tied to the semester we are working on
                 for (const course of semester.courses) {
-
                     await tx.insert(semesterCourses).values({
                         semesterId: semesterEntry.id,
                         courseId: course.id
@@ -177,11 +182,54 @@ export const saveNewSchedule = async (newSchedule: Schedule, userid: number | un
             console.error(err);
         });
 
-        return true;
+        return scheduleID;
 
     } catch(e) {
         
+        return -1;
+    }
+
+}
+
+export const updateSchedule = async (request: UpdateScheduleRequest) => {
+
+    try {
+
+        const { semesterId, originalCourseIds, updatedCourseIds } = request;
+
+        // grab courses that are no longer in the updated arr that were in the original arr
+        const deleteCourses = originalCourseIds.filter((c) => !updatedCourseIds.includes(c));
+
+        // grab the courses that are now in the updated arr but were not in the original arr
+        const addCourses = updatedCourseIds.filter((c) => !originalCourseIds.includes(c));
+
+        // transactional delete / insert
+
+        // wrap in a transaction, so if one step fails, the whole thing fails
+        await db.transaction(async (tx) => {
+
+            await tx.delete(semesterCourses).where(
+                and(
+                    eq(semesterCourses.semesterId, semesterId), inArray(semesterCourses.courseId, deleteCourses)
+                )
+            );
+
+            await tx.insert(semesterCourses).values(addCourses.map((c) => ({ semesterId: semesterId, courseId: c })));
+
+        }).catch((err) => {
+            console.error(err);
+
+            return false;
+        });
+
+        return true;
+
+    } catch(e) {
+
+        console.error(e);
+
         return false;
+
     }
 
 }

@@ -3,8 +3,21 @@ import { db } from "../config/db.js";
 import { coursePrerequisites, courses, majorRequirements, majors, minors } from "../config/schema.js";
 import { Course } from "../types/Course.js";
 
-export const getCourses = () => {
-    return db.select().from(courses).innerJoin(coursePrerequisites, eq(coursePrerequisites.courseId, courses.id));
+export const getCourses = async () => {
+
+    const rows = await db.select({
+        course: courses,
+        prerequisites: sql<number[]>`array_agg(${coursePrerequisites.prerequisiteId}) filter (where ${coursePrerequisites.prerequisiteId} is not null)`
+    })
+    .from(courses)
+    .leftJoin(coursePrerequisites, eq(coursePrerequisites.courseId, courses.id))
+    .groupBy(courses.id, courses.name, courses.code, courses.description, courses.credits, courses.status, courses.type, courses.jobRelevancy);
+
+    return rows.map((r) => ({
+        ...r.course,
+        prerequisites: r.prerequisites ?? []
+    }));
+
 }
 
 export const getMajors = () => {

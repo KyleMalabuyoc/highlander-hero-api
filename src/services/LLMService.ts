@@ -1,7 +1,6 @@
 import { zodResponseFormat } from 'openai/helpers/zod.mjs';
 import { openai } from '../config/openai.js';
 import { pinecone_index } from '../config/pinecone.js';
-import { NewScheduleRequest } from '../types/requests/NewScheduleRequest.js';
 import { StudentInfo } from '../types/StudentInfo.js';
 import { scheduleCreationSystemPrompt, scheduleEditSystemPrompt } from '../utils/prompts.js';
 import { EditScheduleLLMResponseSchema, ScheduleLLMResponse, ScheduleLLMResponseSchema, ScheduleSchema, Suggestion } from '../config/zod-schema.js';
@@ -19,6 +18,7 @@ import { Schedule } from '../types/Schedule.js';
 import { QueryResponse, RecordMetadata } from '@pinecone-database/pinecone';
 import * as pineconeService from './PineconeService.js';
 import redis from '../config/redis.js';
+import { NewScheduleRequest } from '../types/requests/Requests.js';
 
 type RequiredCourse = Awaited<ReturnType<typeof academicRepository.getMajorRequiredCourses>>[number];
 
@@ -61,6 +61,7 @@ export const createSchedule = async (newScheduleRequest: NewScheduleRequest) => 
         });
 
         let defaultSchedule = {
+            id: 0,
             name: newScheduleRequest.scheduleName,
             semesters: semesters,
             studentInfo: newScheduleRequest.studentInfo
@@ -91,7 +92,7 @@ export const editSchedule = async (schedule: Schedule, semesterIndex: number, qu
                 allCourseNames.push(`${course.name}`);
             }
         }
-        const existingCoursesBlock = allCourseNames.join('\n');
+        // const existingCoursesBlock = allCourseNames.join('\n');
 
         // pinecone DB call -> pass query
         // in thr query, pass the students major and minor if applciable??
@@ -146,13 +147,12 @@ export const editSchedule = async (schedule: Schedule, semesterIndex: number, qu
                 ...scheduleResponseFromLLM,
                 suggestions: updatedSuggestions
             };
+            return finalSchedule;
         //     // for now - we assume courses in cache always available since we call it on login with 24hr expiry
         //     // if we run into issues where courses in cache isnt available for some reason we'll query DB directly
         }
 
         return scheduleResponseFromLLM;
-
-        return {};
 
     } catch(e) {
         console.error(e);
@@ -179,11 +179,10 @@ const scheduleEnrichment = async (newScheduleRequest: NewScheduleRequest,
         const majorPineconeCourseNames = majorPineconeMetadata.matches[0].metadata?.course_names as string[];
         const minorPineconeCourseNames = minorPineconeMetadata ? minorPineconeMetadata.matches[0].metadata?.course_names as string[] : [];
 
-        // hit cache instead
+        // TODO: hit cache instead
         const consolidateCourses = (await academicRepository.getCourseByColumn([...majorPineconeCourseNames, ...minorPineconeCourseNames] as string[], "name"));
-        const courseMap = new Map(consolidateCourses.map((c) => ([c.name, c])));
+        const courseMap = new Map<string, Course>(consolidateCourses.map((c) => ([c.name, c])));
 
-        console.log("SLIM SCHEDULE", slimSchedule);
         console.log("REQUIRED COURSES", consolidateCourses);
         console.log("PINECONE CONTEXT MAJOR", majorPineconeMetadata.matches.map(m => m.metadata?.text));
         console.log("PINECONE CONTEXT MINOR", minorPineconeMetadata?.matches.map(m => m.metadata?.text));
@@ -233,26 +232,23 @@ const scheduleEnrichment = async (newScheduleRequest: NewScheduleRequest,
         // add disclaimer: This schedule is a general guide and should be tailored to meet individual needs and academic goals. Always consult with an academic advisor to ensure all degree requirements are met.
         const scheduleResponseFromLLM: ScheduleLLMResponse = JSON.parse(buildScheduleLLMResponse.choices[0].message.content ?? "{}");
 
-        console.log("RESPONSE FROM LLM", scheduleResponseFromLLM);
-
-        scheduleResponseFromLLM?.semesters.forEach((s) => {
+        scheduleResponseFromLLM.semesters.forEach((s) => {
             console.log(s.courses);
         });
 
         // // need to manually add student info. we dont need to send it the studentInfo, thast already provided in the user query.
-        const schedule = {
+        const schedule: Schedule = {
+            id: 0,
             ...scheduleResponseFromLLM,
             semesters: scheduleResponseFromLLM.semesters.map((s, idx) => ({
                 ...s,
                 index: idx,
-                courses: s.courses.map(c => courseMap.get(c.name) ?? c)
+                courses: s.courses.map(c => courseMap.get(c.name) ?? {} as Course) ?? []
             })),
             studentInfo: newScheduleRequest.studentInfo
         };
 
         return schedule;
-
-        return {} as Schedule;
 
     }catch(e) {
         console.error(e);

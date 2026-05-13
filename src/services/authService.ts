@@ -1,13 +1,14 @@
-import { Request } from "express";
+import { Request, Response } from "express";
 import { LoginInfo } from "../types/LoginInfo.js";
 import { dummyLoginResponse } from "../temp/dummyData.js";
-import { AdminGetUserCommand, AdminInitiateAuthCommand, AuthFlowType, CodeMismatchException, CognitoIdentityProviderClient, ConfirmSignUpCommand, ExpiredCodeException, InvalidParameterException, LimitExceededException, NotAuthorizedException, ResendConfirmationCodeCommand, SignUpCommand, TooManyRequestsException, UsernameExistsException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
+import { AdminGetUserCommand, AdminInitiateAuthCommand, AuthFlowType, CodeMismatchException, CognitoIdentityProviderClient, ConfirmSignUpCommand, ExpiredCodeException, GlobalSignOutCommand, InvalidParameterException, LimitExceededException, NotAuthorizedException, ResendConfirmationCodeCommand, RevokeTokenCommand, SignUpCommand, TooManyRequestsException, UsernameExistsException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
 import 'dotenv/config';
 import { db } from "../config/db.js";
 import { users } from "../config/schema.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
 import { RegisterResponse } from "../types/responses/CognitoResponse.js";
 import redis from "../config/redis.js";
+import { access } from "fs";
 
 const client = new CognitoIdentityProviderClient({});
 
@@ -32,6 +33,7 @@ export const login = async (email: string, password: string): Promise<ResponseEn
             accessToken: res.AuthenticationResult?.AccessToken,
             expiresIn: res.AuthenticationResult?.ExpiresIn,
             idToken: res.AuthenticationResult?.IdToken,
+            refreshToken: res.AuthenticationResult?.RefreshToken,
             tokenType: res.AuthenticationResult?.TokenType
         }, cognitoStatus: 'authenticated' });
 
@@ -204,12 +206,76 @@ export const resendCode = async (email: string): Promise<ResponseEntity> => {
     }
 }
 
-export const refresh = (req: Request): LoginInfo => {
-    return dummyLoginResponse;
+export const refresh = async (req: Request): Promise<ResponseEntity> => {
+
+    try {
+
+        const refreshToken = req.cookies['refreshToken'];
+
+        const command = new AdminInitiateAuthCommand({
+            "AuthFlow": "REFRESH_TOKEN_AUTH",
+            "ClientId": process.env.AWS_COGNITO_CLIENT_ID,
+            "UserPoolId": process.env.AWS_USER_POOL_ID,
+            "AuthParameters": {
+                "REFRESH_TOKEN": refreshToken
+            }
+        });
+
+        const res = await client.send(command);
+
+        return new ResponseEntity(200, { access: {
+            accessToken: res.AuthenticationResult?.AccessToken,
+            expiresIn: res.AuthenticationResult?.ExpiresIn,
+            idToken: res.AuthenticationResult?.IdToken,
+            tokenType: res.AuthenticationResult?.TokenType
+        }, cognitoStatus: 'authenticated' });
+
+    } catch(err) {
+
+        if (err instanceof NotAuthorizedException) {
+            // most common - token expired or revoked, force re-login
+            return new ResponseEntity(401, { cognitoStatus: 'session-expired' }, 'Session expired. Please log in again.');
+        }
+
+        if (err instanceof UserNotFoundException) {
+            return new ResponseEntity(401, { cognitoStatus: 'user-not-found' }, 'Account not found.');
+        }
+
+        if (err instanceof TooManyRequestsException) {
+            return new ResponseEntity(429, { cognitoStatus: 'too-many-requests' }, 'Too many requests. Try again later.');
+        }
+
+        if (err instanceof InvalidParameterException) {
+            return new ResponseEntity(400, { cognitoStatus: 'invalid-token' }, 'Invalid refresh token.');
+        }
+
+        return new ResponseEntity(500, {}, 'Internal server error.');
+    }
 }
 
-export const logout = (req: Request): LoginInfo => {
-    return dummyLoginResponse;
+export const logout = async (req: Request): Promise<ResponseEntity> => {
+
+    try {
+
+        const accessToken = req.headers.authorization?.split(' ')[1] ?? '';
+
+        // in the case that the access token isnt available - return false to let UI know logout failed
+        if (accessToken === '') {
+            return new ResponseEntity(400, false, "Unable to perform logout.");
+        }
+
+        // this is really only invalidating the refreshtoken
+        const command = new GlobalSignOutCommand({
+            AccessToken: accessToken
+        });
+
+        await client.send(command);
+
+        return new ResponseEntity(200, true);
+    
+    } catch(err) {
+        return new ResponseEntity(500, false, "Internal server error. " + err);
+    }
 }
 
 export const cancel = async (email: string): Promise<ResponseEntity> => {

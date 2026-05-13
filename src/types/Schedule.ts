@@ -2,6 +2,7 @@ import { Semester } from "./Semester.js";
 import { StudentInfo } from "./StudentInfo.js";
 
 export interface Schedule {
+    id: number,
     name: string,
     semesters: Semester[],
     studentInfo: StudentInfo

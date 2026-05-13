@@ -1,7 +1,4 @@
-import { eq } from "drizzle-orm";
-import { db } from "../config/db.js";
 import redis from "../config/redis.js";
-import { coursePrerequisites, courses, majors, minors } from "../config/schema.js";
 import { Major, Minor } from "../types/AcademicProgram.js";
 import { Course } from "../types/Course.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
@@ -30,12 +27,10 @@ export const getCourses = async (): Promise<ResponseEntity> => {
 
         res.forEach((r) => {
 
-            if (coursesMap.get(r.courses.id) === undefined) {
-                coursesMap.set(r.courses.id, { ...r.courses, prerequisites: [] }) 
+            if (coursesMap.get(r.id) === undefined) {
+                coursesMap.set(r.id, { ...r });
             }
 
-            let cmPrereqs = coursesMap.get(r.courses.id)?.prerequisites;
-            cmPrereqs?.push(r.course_prerequisites.prerequisiteId);
         });
 
         const allCourses = Array.from(coursesMap.values());

@@ -9,6 +9,10 @@ export const createNewSchedule = async(req: Request, res: Response, next: NextFu
     res.status(200).json(await scheduleService.createNewSchedule(req));
 }
 
-export const editNewSchedule = async (req: Request, res: Response, next: NextFunction) => {
-    res.status(200).json(await scheduleService.editSchedule(req));
+export const llmEditNewSchedule = async (req: Request, res: Response, next: NextFunction) => {
+    res.status(200).json(await scheduleService.llmEditSchedule(req));
+}
+
+export const updateSchedule = async (req: Request, res: Response) => {
+    res.status(200).json(await scheduleService.updateSchedule(req));
 }

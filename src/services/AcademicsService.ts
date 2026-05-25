@@ -3,6 +3,7 @@ import { Major, Minor } from "../types/AcademicProgram.js";
 import { Course } from "../types/Course.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
 import * as academicRepository from "../repositories/AcademicsRepository.js";
+import { logger } from "../config/logger/pino.js";
 
 export const getCourses = async (): Promise<ResponseEntity> => {
 
@@ -12,6 +13,7 @@ export const getCourses = async (): Promise<ResponseEntity> => {
         const cache = await redis.get<Course[]>(`courses:all`);
 
         if (cache !== null) { // hit
+            logger.info("Grabbing courses from cache.");
             return new ResponseEntity(200, cache);
         }
 

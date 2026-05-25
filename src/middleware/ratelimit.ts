@@ -10,6 +10,7 @@ export const rateLimitMiddleware = async (req: Request, res: Response, next: Nex
         return res.status(400).json({ message: 'Invalid request' });
     }
 
+    // todo: make configurable
     const allowed = await ratelimiter(req.ip, 5, 60000);
 
     if (!allowed) {

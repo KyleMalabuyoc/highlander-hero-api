@@ -1,14 +1,13 @@
 import { Request, Response } from "express";
 import { LoginInfo } from "../types/LoginInfo.js";
-import { dummyLoginResponse } from "../temp/dummyData.js";
 import { AdminGetUserCommand, AdminInitiateAuthCommand, AuthFlowType, CodeMismatchException, CognitoIdentityProviderClient, ConfirmSignUpCommand, ExpiredCodeException, GlobalSignOutCommand, InvalidParameterException, LimitExceededException, NotAuthorizedException, ResendConfirmationCodeCommand, RevokeTokenCommand, SignUpCommand, TooManyRequestsException, UsernameExistsException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
 import 'dotenv/config';
 import { db } from "../config/db.js";
 import { users } from "../config/schema.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
-import { RegisterResponse } from "../types/responses/CognitoResponse.js";
 import redis from "../config/redis.js";
 import { access } from "fs";
+import { RegisterResponse } from "../types/responses/Responses.js";
 
 const client = new CognitoIdentityProviderClient({});
 

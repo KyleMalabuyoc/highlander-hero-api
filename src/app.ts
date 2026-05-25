@@ -3,6 +3,8 @@ import cors from 'cors';
 import router from './routes/routes.js';
 import cookieParser from 'cookie-parser';
 import 'dotenv/config';
+import { pinoHttp } from 'pino-http';
+import { autologging, logger, customHTTPSerializer } from './config/logger/pino.js';
 
 const app = express();
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
@@ -13,11 +15,12 @@ const corsOptions = {
     credentials: true
 };
 
+app.set('trust proxy', 1);
+app.use(pinoHttp({ logger, serializers: customHTTPSerializer, autoLogging: autologging }));
 app.use(cors(corsOptions));
 app.use(express.json()); // deserializer
 app.use(cookieParser()) // cookie parser middleware to be able to grab cookies when they get to server
 app.use('/api/v1', router);
-app.set('trust proxy', 1);
 
 app.listen(process.env.PORT, (err) => {
     if (err) console.log(err);

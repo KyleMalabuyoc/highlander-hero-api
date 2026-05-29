@@ -1,6 +1,8 @@
 import { openai } from '../config/openai.js';
 import { pinecone_index } from '../config/pinecone.js';
 import { StudentInfo } from '../types/StudentInfo.js';
+import { formatMsg, logger } from '../config/logger/pino.js';
+import { PINECONE_SERVICE, PINECONE_METHODS } from '../types/logging.js';
 
 /**
  * 
@@ -24,7 +26,7 @@ export const pineconeQueryForScheduleCreation = async (studentInfo: StudentInfo)
         const majorEmbeddingPromise = openai.embeddings.create({
             model: "text-embedding-3-small",
             input: studentInfo.major.name,
-            encoding_format: "float",
+            encoding_format: "float"
         });
 
         // chain embed promise to query promise
@@ -59,28 +61,39 @@ export const pineconeQueryForScheduleCreation = async (studentInfo: StudentInfo)
 
         const pineconeResults = await Promise.all(pineconeQueryPromises);
 
+        logger.info(formatMsg(PINECONE_SERVICE, PINECONE_METHODS.QUERY_FOR_SCHEDULE_CREATION), "Executed pinecone query call to grab metadata on major (and minor if applicable).");
+
         return pineconeResults;
 
     } catch(e) {
-        console.error(e);
+        logger.error({ ...formatMsg(PINECONE_SERVICE, PINECONE_METHODS.QUERY_FOR_SCHEDULE_CREATION), err: e }, 'Pinecone query error.');
         return [];
     }
 }
 
 export const simplePineconeCall = async (query: string, topK: number = 1) => {
 
-    const userQueryEmbedding = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: query,
-        encoding_format: "float",
-    });
+    try {
 
-    const pineconeMetadata = await pinecone_index.query({
-        vector: userQueryEmbedding.data[0].embedding,
-        topK: topK,
-        includeMetadata: true
-    });
+        const userQueryEmbedding = await openai.embeddings.create({
+            model: "text-embedding-3-small",
+            input: query,
+            encoding_format: "float",
+        });
 
-    return pineconeMetadata;
+        const pineconeMetadata = await pinecone_index.query({
+            vector: userQueryEmbedding.data[0].embedding,
+            topK: topK,
+            includeMetadata: true
+        });
+
+        logger.info(formatMsg(PINECONE_SERVICE, PINECONE_METHODS.SIMPLE_PINECONE_CALL), "Executed pinecone simple query to grab context on major / minor.");
+
+        return pineconeMetadata;
+
+    } catch(e) {
+        logger.error({ ...formatMsg(PINECONE_SERVICE, PINECONE_METHODS.SIMPLE_PINECONE_CALL), err: e }, 'Pinecone query error.');
+        throw e;
+    }
 
 }

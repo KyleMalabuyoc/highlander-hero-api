@@ -9,6 +9,7 @@ export const ratelimiter = async (ip: string, limit: number, windowMs: number) =
     // atomic operation to remove the timestamps that dont fall in this window
     await redis.zremrangebyscore(key, 0, start);
 
+    // counts total items in set stored at that key in cache
     const count = await redis.zcard(key);
 
     // limit is hit, dont allow through

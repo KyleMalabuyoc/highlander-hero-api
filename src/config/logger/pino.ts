@@ -18,24 +18,17 @@ export const autologging = {
 
 // only for HTTP req/res shape
 export const customHTTPSerializer = {
-    req: (req: SerializedRequest) => ({ // known hooks, along with res and err. Serializers only apply to these
+    req: (req: SerializedRequest) => ({
         method: req.method,
         url: req.url,
-        userId: 'need this',
-        headers: {
-            host: req.headers.host,
-            transactionId: req.headers['transaction-id']
-        }
+        transactionId: req.headers['transaction-id'],
+        // userId: req.raw?.user?.sub
     }),
     res: (res: SerializedResponse) => ({
-        method: res.raw.req.method,
-        url: res.raw.req.url,
-        userId: 'need this',
-        headers: {
-            host: res.raw.req.headers.host,
-            transactionId: res.raw.req.headers['transaction-id']
-        }
+        statusCode: res.statusCode,
+        // responseTime: res.raw?.[startTime]  // how long it took
     })
+
 
     // we can add other logs like request body response body within the code itself
 }
@@ -44,3 +37,7 @@ export const customHTTPSerializer = {
  * 
  * Note - pino-http passes a partially serialized res object to the serializer, not the full Express response — so some methods like getHeader aren't available.
  */
+
+export const formatMsg = (source: string, method: string) => {
+    return { source, method };
+}

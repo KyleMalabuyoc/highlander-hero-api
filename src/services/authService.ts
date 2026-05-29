@@ -8,6 +8,8 @@ import { ResponseEntity } from "../types/ResponseEntity.js";
 import redis from "../config/redis.js";
 import { access } from "fs";
 import { RegisterResponse } from "../types/responses/Responses.js";
+import { formatMsg, logger } from "../config/logger/pino.js";
+import { AUTH_SERVICE, AUTH_METHODS } from "../types/logging.js";
 
 const client = new CognitoIdentityProviderClient({});
 
@@ -28,6 +30,9 @@ export const login = async (email: string, password: string): Promise<ResponseEn
     try {
 
         const res = await client.send(command);
+
+        logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGIN), "User authenticated successfully.");
+
         return new ResponseEntity(200, { access: {
             accessToken: res.AuthenticationResult?.AccessToken,
             expiresIn: res.AuthenticationResult?.ExpiresIn,
@@ -39,14 +44,16 @@ export const login = async (email: string, password: string): Promise<ResponseEn
     } catch(err) {
 
         if (err instanceof UserNotFoundException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGIN), err }, 'User not found.');
             return new ResponseEntity(400, { cognitoStatus: "user-not-found"}, "User not found.");
         }
 
         if (err instanceof NotAuthorizedException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGIN), err }, 'Username or password is incorrect.');
             return new ResponseEntity(401, { cognitoStatus: "not-authenticated" }, "Username or password is incorrect.");
         }
         
-        console.error(err);
+        logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGIN), err }, 'Login error.');
         return new ResponseEntity(500, {});
     }
 
@@ -69,6 +76,8 @@ export const register = async (email: string, password: string): Promise<Respons
         await db.insert(users).values({ userSub: result.UserSub });
 
         const resdata: RegisterResponse = { message: "Registration successful. Check your email for a verification code.", destination: result.CodeDeliveryDetails?.Destination, cognitoStatus: 'confirm-code' };
+        logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.REGISTER), "User registered successfully.");
+
         return new ResponseEntity(200, resdata);
 
     } catch(err) {
@@ -80,20 +89,22 @@ export const register = async (email: string, password: string): Promise<Respons
                 Username: email
             }));
 
+            // user email is already confirmed and exists in cognito
             if (user.UserStatus === 'CONFIRMED') {
+                logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.REGISTER), err }, 'An account with this email already exists.');
                 return new ResponseEntity(400, { message: 'An account with this email already exists.', cognitoStatus: 'account-exists'});
             }
 
-            // check cache first to see if user is locked out for 24 hours
-            // if so, dont send the code
+            // check to see how many times the user has attempted to get a code
             const attempts = await redis.get<number>(`confirm-attempts:${email}`) ?? 0;
 
+            // if the user has attempted 3 or more confirm code attempts, prevent them
             if (attempts >= 3) {
+                logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.REGISTER), err }, 'Too many failed registration attempts.');
                 return new ResponseEntity(429, { cognitoStatus: 'too-many-requests'});
             }
 
-            // in the scenario that the user exceeds the amount of times allowed for a code entry
-
+            // user still has attempts left for code confirmation - their email exists in cognito but hasnt been confirmed
             if (user.UserStatus === 'UNCONFIRMED') {
 
                 const result = await client.send(new ResendConfirmationCodeCommand({
@@ -101,10 +112,12 @@ export const register = async (email: string, password: string): Promise<Respons
                     Username: email
                 }));
 
+                logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.REGISTER), "Registration successful. Check your email for a verification code.");
                 return new ResponseEntity(200, { message: "Registration successful. Check your email for a verification code.", destination: result.CodeDeliveryDetails?.Destination, cognitoStatus: 'confirm-code' })
             }
         }
 
+        logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.REGISTER), err }, 'Register error.');
         return new ResponseEntity(500, {}, "Internal server error: " + err);
     }
 }
@@ -130,19 +143,24 @@ export const confirm = async (email: string, code: string): Promise<ResponseEnti
         }
         
         await client.send(command);
+
+        logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.CONFIRM), "User confirmed successfully.");
         return  new ResponseEntity(200, { cognitoStatus: 'confirmed' });
 
     } catch(err) {
 
         if (err instanceof UserNotFoundException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.CONFIRM), err }, 'User not found.');
             return new ResponseEntity(404, { cognitoStatus: 'user-not-found' });
         }
 
         if (err instanceof LimitExceededException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.CONFIRM), err }, 'Too many attempts.');
             return new ResponseEntity(429, { cognitoStatus: 'too-many-requests'});
         }
 
         if (err instanceof ExpiredCodeException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.CONFIRM), err }, 'Confirmation code is expired.');
             return new ResponseEntity(400, { cognitoStatus: 'code-expired' })
         }
 
@@ -151,12 +169,15 @@ export const confirm = async (email: string, code: string): Promise<ResponseEnti
             // const attempts = await redis.get<number>(`confirm-attempts:${email}`) ?? 0;
 
             if (attempts == 3) {
+                logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.CONFIRM), err }, 'Too many attempts.');
                 return new ResponseEntity(429, { cognitoStatus: 'too-many-requests'});
             }
 
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.CONFIRM), err }, 'Confirmation code does not match.');
             return new ResponseEntity(400 , { cognitoStatus: 'code-mismatch' });
         }
 
+        logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.CONFIRM), err }, 'Confirm error.');
         return new ResponseEntity(500, {}, "Internal server error." + err);
     }
 
@@ -185,22 +206,29 @@ export const resendCode = async (email: string): Promise<ResponseEntity> => {
         }
 
         await client.send(command);
+
+        logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.RESEND_CODE), "Verification code resent successfully.");
         return  new ResponseEntity(200, { cognitoStatus: 'code-resent' });
 
     } catch(err) {
        
         if (err instanceof UserNotFoundException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.RESEND_CODE), err }, 'User not found.');
             return new ResponseEntity(404, { cognitoStatus: 'user-not-found' });
         }
 
+        // idk why im sending 'already-confirmed' - we'd never get here if its already confirmed, need to fix TODO
         if (err instanceof InvalidParameterException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.RESEND_CODE), err }, 'Invalid Parameter or already confirmed.');
             return new ResponseEntity(400, { cognitoStatus: 'already-confirmed' });
         }
 
         if (err instanceof LimitExceededException || err instanceof TooManyRequestsException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.RESEND_CODE), err }, 'Too many attempts.');
             return new ResponseEntity(429, { cognitoStatus: 'too-many-requests' });
         }
 
+        logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.RESEND_CODE), err }, 'Resend code error.');
         return new ResponseEntity(500, {}, "Internal server error: " + err);
     }
 }
@@ -222,6 +250,7 @@ export const refresh = async (req: Request): Promise<ResponseEntity> => {
 
         const res = await client.send(command);
 
+        logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.REFRESH), "Token refreshed successfully.");
         return new ResponseEntity(200, { access: {
             accessToken: res.AuthenticationResult?.AccessToken,
             expiresIn: res.AuthenticationResult?.ExpiresIn,
@@ -232,22 +261,27 @@ export const refresh = async (req: Request): Promise<ResponseEntity> => {
     } catch(err) {
 
         if (err instanceof NotAuthorizedException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.REFRESH), err }, 'Session expired. Please log in again.');
             // most common - token expired or revoked, force re-login
             return new ResponseEntity(401, { cognitoStatus: 'session-expired' }, 'Session expired. Please log in again.');
         }
 
         if (err instanceof UserNotFoundException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.REFRESH), err }, 'Account not found.');
             return new ResponseEntity(401, { cognitoStatus: 'user-not-found' }, 'Account not found.');
         }
 
         if (err instanceof TooManyRequestsException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.REFRESH), err }, 'Too many requests. Try again later.');
             return new ResponseEntity(429, { cognitoStatus: 'too-many-requests' }, 'Too many requests. Try again later.');
         }
 
         if (err instanceof InvalidParameterException) {
+            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.REFRESH), err }, 'Invalid refresh token.');
             return new ResponseEntity(400, { cognitoStatus: 'invalid-token' }, 'Invalid refresh token.');
         }
 
+        logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.REFRESH), err }, 'Token refresh error.');
         return new ResponseEntity(500, {}, 'Internal server error.');
     }
 }
@@ -270,9 +304,11 @@ export const logout = async (req: Request): Promise<ResponseEntity> => {
 
         await client.send(command);
 
+        logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGOUT), "User logged out successfully.");
         return new ResponseEntity(200, true);
     
     } catch(err) {
+        logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGOUT), err }, 'Logout error.');
         return new ResponseEntity(500, false, "Internal server error. " + err);
     }
 }
@@ -285,10 +321,11 @@ export const cancel = async (email: string): Promise<ResponseEntity> => {
         await redis.del(`resend-code:${ email }`);
 
         // do we need a cancel count?? to limit user cancel requests
+        logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.CANCEL), "Registration cancelled.");
         return new ResponseEntity(200, true);
 
     } catch(err) {
-
+        logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.CANCEL), err }, 'Cancel error.');
         return new ResponseEntity(500, {}, "Internal server error. " + err);
     }
 }

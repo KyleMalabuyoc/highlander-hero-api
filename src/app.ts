@@ -16,7 +16,11 @@ const corsOptions = {
 };
 
 app.set('trust proxy', 1);
-app.use(pinoHttp({ logger, serializers: customHTTPSerializer, autoLogging: autologging }));
+app.use(pinoHttp({
+    logger,
+    serializers: customHTTPSerializer,
+    autoLogging: autologging
+}));
 app.use(cors(corsOptions));
 app.use(express.json()); // deserializer
 app.use(cookieParser()) // cookie parser middleware to be able to grab cookies when they get to server

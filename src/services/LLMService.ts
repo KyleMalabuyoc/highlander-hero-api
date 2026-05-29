@@ -1,24 +1,17 @@
 import { zodResponseFormat } from 'openai/helpers/zod.mjs';
 import { openai } from '../config/openai.js';
-import { pinecone_index } from '../config/pinecone.js';
-import { StudentInfo } from '../types/StudentInfo.js';
 import { scheduleCreationSystemPrompt, scheduleEditSystemPrompt } from '../utils/prompts.js';
 import { EditScheduleLLMResponseSchema, ScheduleLLMResponse, ScheduleLLMResponseSchema, ScheduleSchema, Suggestion } from '../config/zod-schema.js';
-import { courses, majorRequirements } from '../config/schema.js';
-import { db } from '../config/db.js';
-import { inArray } from 'drizzle-orm';
-import * as academicService from './AcademicsService.js';
-import { ChatCompletionMessageParam } from 'openai/resources';
-import { get_course_tool, getCoursesTool } from './tools/get_courses.js';
 import { Course } from '../types/Course.js';
 import * as academicRepository from "../repositories/AcademicsRepository.js";
-import { year } from 'drizzle-orm/mysql-core';
 import { Semester } from '../types/Semester.js';
 import { Schedule } from '../types/Schedule.js';
 import { QueryResponse, RecordMetadata } from '@pinecone-database/pinecone';
 import * as pineconeService from './PineconeService.js';
 import redis from '../config/redis.js';
 import { NewScheduleRequest } from '../types/requests/Requests.js';
+import { formatMsg, logger } from '../config/logger/pino.js';
+import { LLM_SERVICE, LLM_METHODS } from '../types/logging.js';
 
 type RequiredCourse = Awaited<ReturnType<typeof academicRepository.getMajorRequiredCourses>>[number];
 
@@ -27,8 +20,12 @@ export const createSchedule = async (newScheduleRequest: NewScheduleRequest) => 
      try {
 
         const requiredCoursesForMajor = await academicRepository.getMajorRequiredCourses(newScheduleRequest.studentInfo.major.id);
-        let semesterMap: Map<number, { semesterIndex: number, courses: Course[] }> = new Map();
 
+        logger.info({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), majorId: newScheduleRequest.studentInfo.major.id }, "Grabbed required courses for major.");
+
+        let semesterMap: Map<number, { semesterIndex: number, courses: Course[] }> = new Map();
+        
+        // this loop builds a default schedule structure for the major without LLM
         requiredCoursesForMajor.forEach((c) => {
 
             if (c.yearIndex !== null && c.semesterIndex !== null) {
@@ -36,7 +33,8 @@ export const createSchedule = async (newScheduleRequest: NewScheduleRequest) => 
                 const mapID = c.yearIndex * 10 + c.semesterIndex;
                 
                 if (semesterMap.get(mapID) === undefined) {
-                    const { yearIndex, semesterIndex, ...course} = c;
+                    // use rest destructuring fir course
+                    const { yearIndex, semesterIndex, ...course } = c;
                     semesterMap.set(mapID, { semesterIndex: c.semesterIndex, courses: [course] });
                 } else {
                     const currMapValue = semesterMap.get(mapID)?.courses ?? [];
@@ -48,7 +46,7 @@ export const createSchedule = async (newScheduleRequest: NewScheduleRequest) => 
 
         });
 
-        // create semesters array
+        // create semesters array - semesterMap.entries() gives us an array of tuples.
         const semesters: Semester[] = Array.from(semesterMap.entries()).sort((a, b) => {
             return a[0] - b[0];
         }).map(([key, semester]) => {
@@ -67,14 +65,14 @@ export const createSchedule = async (newScheduleRequest: NewScheduleRequest) => 
             studentInfo: newScheduleRequest.studentInfo
         };
 
+        // grabbing entire course list from pinecone metadata
         const pineconeResults = await pineconeService.pineconeQueryForScheduleCreation(newScheduleRequest.studentInfo);
         const schedule = await scheduleEnrichment(newScheduleRequest, defaultSchedule, pineconeResults);
 
         return schedule;
 
     } catch(e) {
-        // TODO
-        console.error(e);
+        logger.error({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), err: e }, 'Schedule creation error.');
         return {} as Schedule;
     }
 
@@ -98,7 +96,7 @@ export const editSchedule = async (schedule: Schedule, semesterIndex: number, qu
         // in thr query, pass the students major and minor if applciable??
         const pineconeMetadataText = (await pineconeService.simplePineconeCall(query, 3)).matches.map((m) => m.metadata?.text);
 
-        console.log(pineconeMetadataText);
+        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.EDIT_SCHEDULE), pineconeMetadataText }, 'Pinecone results.');
 
         const response = await openai.chat.completions.create({
             model: "gpt-4o-2024-08-06",
@@ -130,7 +128,7 @@ export const editSchedule = async (schedule: Schedule, semesterIndex: number, qu
 
         const scheduleResponseFromLLM = JSON.parse(response.choices[0].message.content ?? "{}");
 
-        console.log(scheduleResponseFromLLM);
+        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.EDIT_SCHEDULE), scheduleResponseFromLLM }, 'LLM edit response.');
 
         // only need to make cache or DB call if suggestions is populated.
         if (scheduleResponseFromLLM.suggestions.length > 0) {
@@ -155,7 +153,8 @@ export const editSchedule = async (schedule: Schedule, semesterIndex: number, qu
         return scheduleResponseFromLLM;
 
     } catch(e) {
-        console.error(e);
+        // need to return an error response TODO
+        logger.error({ ...formatMsg(LLM_SERVICE, LLM_METHODS.EDIT_SCHEDULE), err: e }, 'Schedule edit error.');
     }
 
 }
@@ -183,9 +182,9 @@ const scheduleEnrichment = async (newScheduleRequest: NewScheduleRequest,
         const consolidateCourses = (await academicRepository.getCourseByColumn([...majorPineconeCourseNames, ...minorPineconeCourseNames] as string[], "name"));
         const courseMap = new Map<string, Course>(consolidateCourses.map((c) => ([c.name, c])));
 
-        console.log("REQUIRED COURSES", consolidateCourses);
-        console.log("PINECONE CONTEXT MAJOR", majorPineconeMetadata.matches.map(m => m.metadata?.text));
-        console.log("PINECONE CONTEXT MINOR", minorPineconeMetadata?.matches.map(m => m.metadata?.text));
+        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), count: consolidateCourses.length }, 'Required courses fetched.');
+        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), context: majorPineconeMetadata.matches.map(m => m.metadata?.text) }, 'Pinecone major context.');
+        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), context: minorPineconeMetadata?.matches.map(m => m.metadata?.text) }, 'Pinecone minor context.');
 
         const hasMinor = !!newScheduleRequest.studentInfo.minor;
 
@@ -232,11 +231,9 @@ const scheduleEnrichment = async (newScheduleRequest: NewScheduleRequest,
         // add disclaimer: This schedule is a general guide and should be tailored to meet individual needs and academic goals. Always consult with an academic advisor to ensure all degree requirements are met.
         const scheduleResponseFromLLM: ScheduleLLMResponse = JSON.parse(buildScheduleLLMResponse.choices[0].message.content ?? "{}");
 
-        scheduleResponseFromLLM.semesters.forEach((s) => {
-            console.log(s.courses);
-        });
+        logger.info({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), semesterCount: scheduleResponseFromLLM.semesters.length }, 'Schedule built from LLM response.');
 
-        // // need to manually add student info. we dont need to send it the studentInfo, thast already provided in the user query.
+        // need to manually add student info. we dont need to send it the studentInfo, thast already provided in the user query.
         const schedule: Schedule = {
             id: 0,
             ...scheduleResponseFromLLM,
@@ -250,8 +247,8 @@ const scheduleEnrichment = async (newScheduleRequest: NewScheduleRequest,
 
         return schedule;
 
-    }catch(e) {
-        console.error(e);
+    } catch(e) {
+        logger.error({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), err: e }, 'Schedule enrichment error.');
         return {} as Schedule;
     }
     

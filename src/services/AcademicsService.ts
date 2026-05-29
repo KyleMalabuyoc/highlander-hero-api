@@ -3,7 +3,8 @@ import { Major, Minor } from "../types/AcademicProgram.js";
 import { Course } from "../types/Course.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
 import * as academicRepository from "../repositories/AcademicsRepository.js";
-import { logger } from "../config/logger/pino.js";
+import { formatMsg, logger } from "../config/logger/pino.js";
+import { ACADEMIC_SERVICE, ACADEMIC_METHODS } from "../types/logging.js";
 
 export const getCourses = async (): Promise<ResponseEntity> => {
 
@@ -13,12 +14,12 @@ export const getCourses = async (): Promise<ResponseEntity> => {
         const cache = await redis.get<Course[]>(`courses:all`);
 
         if (cache !== null) { // hit
-            logger.info("Grabbing courses from cache.");
+            logger.info(formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_COURSES), "Grabbed courses from cache. Cache hit.");
             return new ResponseEntity(200, cache);
         }
 
     } catch(err) {
-        console.error(err);
+        logger.error({ ...formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_COURSES), err }, 'Error.' );
     }
     
     // cache not available
@@ -35,17 +36,16 @@ export const getCourses = async (): Promise<ResponseEntity> => {
 
         });
 
+        logger.info(formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_COURSES), "Grabbed courses from DB. Cache miss.");
+
         const allCourses = Array.from(coursesMap.values());
         await redis.set(`courses:all`, JSON.stringify(allCourses),  { ex: Number(process.env.UPSTASH_REDIS_EXPIRY) });
         return new ResponseEntity(200, allCourses);
 
     } catch(err) {
 
-        if (err instanceof Error) {
-            return { status: 500, errorMessage: err.message };
-        }
-
-        return { status: 500, errorMessage: "Internal Server Error" };
+        logger.error({ ...formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_COURSES), err }, 'DB Error.' );
+        return new ResponseEntity(500, { err }, "Something went wrong. Please try again later.");
     }
 }
 
@@ -56,24 +56,27 @@ export const getMajors = async (): Promise<ResponseEntity> => {
         const cache = await redis.get<Major[]>(`majors:all`);
 
         if (cache !== null) {
+            logger.info(formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MAJORS), "Grabbed majors from cache. Cache hit.");
             return new ResponseEntity(200, cache);
         }
 
     } catch(err) {
-        console.error(err);
+        logger.error({ ...formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MAJORS), err }, 'Cache Error.' );
     }
 
     try {
 
         const res = await academicRepository.getMajors();
+
+        logger.info(formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MAJORS), "Grabbed majors from DB. Cache miss.");
+
         await redis.set(`majors:all`, JSON.stringify(res), { ex: Number(process.env.UPSTASH_REDIS_EXPIRY) });
         return new ResponseEntity(200, res);
 
     } catch(err) {
-        if (err instanceof Error) {
-            return { status: 500, errorMessage: err.message };
-        }
-        return { status: 500, errorMessage: "Internal Server Error" };
+
+        logger.error({ ...formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MAJORS), err }, 'DB Error.' );
+        return new ResponseEntity(500, { err }, "Something went wrong. Please try again later.");
     }
 }
 
@@ -84,23 +87,26 @@ export const getMinors = async (): Promise<ResponseEntity> => {
         const cache = await redis.get<Minor[]>(`minors:all`);
 
         if (cache !== null) {
+            logger.info(formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MINORS), "Grabbing minors from cache. Cache hit.");
             return new ResponseEntity(200, cache);
         }
 
     } catch(err) {
-        console.error(err);
+        logger.error({ ...formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MINORS), err }, 'Cache Error.' );
     }
 
     try {
 
         const res = await academicRepository.getMinors();
+
+        logger.info(formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MINORS), "Grabbed minors from DB. Cache miss.");
+
         await redis.set(`minors:all`, JSON.stringify(res), { ex: Number(process.env.UPSTASH_REDIS_EXPIRY) });
         return new ResponseEntity(200, res);
 
     } catch(err) {
-        if (err instanceof Error) {
-            return { status: 500, errorMessage: err.message };
-        }
-        return { status: 500, errorMessage: "Internal Server Error" };
+
+        logger.error({ ...formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MINORS), err }, 'DB Error.' );
+        return new ResponseEntity(500, { err }, "Something went wrong. Please try again later.");
     }
 }

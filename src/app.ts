@@ -22,7 +22,7 @@ app.use(pinoHttp({
     autoLogging: autologging
 }));
 app.use(cors(corsOptions));
-app.use(express.json()); // deserializer
+app.use(express.json()); // JSON deserializer for incoming requests only
 app.use(cookieParser()) // cookie parser middleware to be able to grab cookies when they get to server
 app.use('/api/v1', router);
 

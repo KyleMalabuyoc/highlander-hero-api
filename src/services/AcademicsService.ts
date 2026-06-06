@@ -4,7 +4,7 @@ import { Course } from "../types/Course.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
 import * as academicRepository from "../repositories/AcademicsRepository.js";
 import { formatMsg, logger } from "../config/logger/pino.js";
-import { ACADEMIC_SERVICE, ACADEMIC_METHODS } from "../types/logging.js";
+import { ACADEMIC_SERVICE, ACADEMIC_METHODS } from "../types/Logging.js";
 
 export const getCourses = async (): Promise<ResponseEntity> => {
 

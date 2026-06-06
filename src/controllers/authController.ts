@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import * as authService from '../services/AuthService.js';
+import * as authService from '../services/authService.js';
 
 // authentication - grabs tokens
 export const login = async (req: Request, res: Response) => {
@@ -7,6 +7,7 @@ export const login = async (req: Request, res: Response) => {
     try {
 
         const loginResponseEntity = await authService.login(req.body.email, req.body.password);
+
         const { refreshToken } = loginResponseEntity.data.access;
 
         // set httponly cookie for refreshtoken to be stored in browser

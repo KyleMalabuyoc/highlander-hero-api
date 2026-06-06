@@ -11,7 +11,7 @@ import * as pineconeService from './PineconeService.js';
 import redis from '../config/redis.js';
 import { NewScheduleRequest } from '../types/requests/Requests.js';
 import { formatMsg, logger } from '../config/logger/pino.js';
-import { LLM_SERVICE, LLM_METHODS } from '../types/logging.js';
+import { LLM_SERVICE, LLM_METHODS } from '../types/Logging.js';
 
 type RequiredCourse = Awaited<ReturnType<typeof academicRepository.getMajorRequiredCourses>>[number];
 

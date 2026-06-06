@@ -1,15 +1,13 @@
-import { Request, Response } from "express";
-import { LoginInfo } from "../types/LoginInfo.js";
+import { Request } from "express";
 import { AdminGetUserCommand, AdminInitiateAuthCommand, AuthFlowType, CodeMismatchException, CognitoIdentityProviderClient, ConfirmSignUpCommand, ExpiredCodeException, GlobalSignOutCommand, InvalidParameterException, LimitExceededException, NotAuthorizedException, ResendConfirmationCodeCommand, RevokeTokenCommand, SignUpCommand, TooManyRequestsException, UsernameExistsException, UserNotFoundException } from "@aws-sdk/client-cognito-identity-provider";
 import 'dotenv/config';
 import { db } from "../config/db.js";
 import { users } from "../config/schema.js";
 import { ResponseEntity } from "../types/ResponseEntity.js";
 import redis from "../config/redis.js";
-import { access } from "fs";
 import { RegisterResponse } from "../types/responses/Responses.js";
 import { formatMsg, logger } from "../config/logger/pino.js";
-import { AUTH_SERVICE, AUTH_METHODS } from "../types/logging.js";
+import { AUTH_SERVICE, AUTH_METHODS } from "../types/Logging.js";
 
 const client = new CognitoIdentityProviderClient({});
 
@@ -251,6 +249,7 @@ export const refresh = async (req: Request): Promise<ResponseEntity> => {
         const res = await client.send(command);
 
         logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.REFRESH), "Token refreshed successfully.");
+
         return new ResponseEntity(200, { access: {
             accessToken: res.AuthenticationResult?.AccessToken,
             expiresIn: res.AuthenticationResult?.ExpiresIn,

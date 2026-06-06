@@ -7,6 +7,8 @@ import { pinoHttp } from 'pino-http';
 import { autologging, logger, customHTTPSerializer } from './config/logger/pino.js';
 
 const app = express();
+app.disable('x-powered-by');
+
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
 
 const corsOptions = {

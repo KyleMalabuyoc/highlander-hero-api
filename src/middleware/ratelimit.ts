@@ -7,14 +7,13 @@ export const rateLimitMiddleware = async (req: Request, res: Response, next: Nex
 
     // || !isIP(req.ip) || !ipValidation(req.ip)
     if (req.ip === undefined || req.ip == null) {
-        return res.status(400).json({ message: 'Invalid request' });
+        return res.status(400).json(new ResponseEntity(400, {}, "Invalid Request."));
     }
 
-    // todo: make configurable
-    const allowed = await ratelimiter(req.ip, 5, 60000);
+    const allowed = await ratelimiter(req.ip, Number(process.env.RATE_LIMIT || 5), Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000);
 
     if (!allowed) {
-        res.status(429).json(new ResponseEntity(429, {}, "Request failed. Try again in a few seconds."));
+        return res.status(429).json(new ResponseEntity(429, {}, "Request failed. Try again in a few seconds."));
     } else {
         next();
     }

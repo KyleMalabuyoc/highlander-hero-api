@@ -2,6 +2,12 @@ export const ACADEMIC_SERVICE = 'AcademicService';
 export const AUTH_SERVICE = 'AuthService';
 export const LLM_SERVICE = 'LLMService';
 
+export const USER_REPOSITORY = 'UserRepository';
+
+export const USER_REPO_METHODS = {
+    GET_USER_ID: 'getUserId'
+}
+
 export const ACADEMIC_METHODS = {
     GET_COURSES: 'getCourses',
     GET_MAJORS: 'getMajors',
@@ -30,6 +36,7 @@ export const SCHEDULE_METHODS = {
     CREATE_NEW_SCHEDULE: 'createNewSchedule',
     LLM_EDIT_SCHEDULE: 'llmEditSchedule',
     UPDATE_SCHEDULE: 'updateSchedule',
+    VALIDATE_USER_SUB: 'validateUserSub'
 } as const;
 
 export const PINECONE_SERVICE = 'PineconeService';

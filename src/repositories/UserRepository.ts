@@ -1,7 +1,9 @@
 import { db } from "../config/db.js";
+import { formatMsg, logger } from "../config/logger/pino.js";
 import redis from "../config/redis.js"
 import { users } from "../config/schema.js";
 import { eq } from "drizzle-orm";
+import { USER_REPO_METHODS, USER_REPOSITORY } from "../types/Logging.js";
 
 export const getUserId = async (sub: string | undefined, username: string | undefined): Promise<number> => {
 
@@ -16,8 +18,8 @@ export const getUserId = async (sub: string | undefined, username: string | unde
             return cache; // cache hit
         }
      
-    } catch(e) {
-        console.error(e);
+    } catch(err) {
+        logger.error({ ...formatMsg(USER_REPOSITORY, USER_REPO_METHODS.GET_USER_ID), err }, 'Error retrieving userid from cache.');
     }
 
     try {
@@ -31,7 +33,8 @@ export const getUserId = async (sub: string | undefined, username: string | unde
 
         return userid[0].id;
 
-    } catch(e) {
+    } catch(err) {
+        logger.error({ ...formatMsg(USER_REPOSITORY, USER_REPO_METHODS.GET_USER_ID), err }, 'Error retrieving userid from DB.');
         return -1;
     }
 

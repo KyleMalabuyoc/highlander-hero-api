@@ -1,18 +1,46 @@
-import { NextFunction, Request, Response } from "express";
-import * as scheduleService from '../services/ScheduleService.js';
+import { Request, Response } from "express";
+import * as scheduleService from '../services/scheduleService.js';
 
-export const getSchedules = async (req: Request, res: Response, next: NextFunction) => {
-    res.status(200).json(await scheduleService.getSchedules(req));
+export const getSchedules = async (req: Request, res: Response) => {
+
+    const result = await scheduleService.getSchedules(req);
+
+    if (result.status !== 200) {
+        return res.status(result.status).json(result);
+    } 
+
+    return res.status(200).json(result);
 }
 
-export const createNewSchedule = async(req: Request, res: Response, next: NextFunction) => {
-    res.status(200).json(await scheduleService.createNewSchedule(req));
+export const createNewSchedule = async(req: Request, res: Response) => {
+
+    const result = await scheduleService.createNewSchedule(req);
+
+    if (result.status !== 200) {
+        return res.status(result.status).json(result);
+    }
+
+    return res.status(200).json(result);
 }
 
-export const llmEditNewSchedule = async (req: Request, res: Response, next: NextFunction) => {
-    res.status(200).json(await scheduleService.llmEditSchedule(req));
+export const llmEditNewSchedule = async (req: Request, res: Response) => {
+
+    const result = await scheduleService.llmEditSchedule(req);
+    
+    if (result.status !== 200) {
+        return res.status(result.status).json(result);
+    }
+
+    return res.status(200).json(result);
 }
 
 export const updateSchedule = async (req: Request, res: Response) => {
-    res.status(200).json(await scheduleService.updateSchedule(req));
+
+    const result = await scheduleService.updateSchedule(req);
+    
+    if (result.status !== 200) {
+        return res.status(result.status).json(result);
+    }
+
+    return res.status(200).json(result);
 }

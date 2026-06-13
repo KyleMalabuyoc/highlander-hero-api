@@ -2,7 +2,7 @@ import { openai } from '../config/openai.js';
 import { pinecone_index } from '../config/pinecone.js';
 import { StudentInfo } from '../types/StudentInfo.js';
 import { formatMsg, logger } from '../config/logger/pino.js';
-import { PINECONE_SERVICE, PINECONE_METHODS } from '../types/logging.js';
+import { PINECONE_SERVICE, PINECONE_METHODS } from '../types/Logging.js';
 
 /**
  * 

@@ -90,13 +90,10 @@ export const editSchedule = async (schedule: Schedule, semesterIndex: number, qu
                 allCourseNames.push(`${course.name}`);
             }
         }
-        // const existingCoursesBlock = allCourseNames.join('\n');
 
         // pinecone DB call -> pass query
         // in thr query, pass the students major and minor if applciable??
         const pineconeMetadataText = (await pineconeService.simplePineconeCall(query, 3)).matches.map((m) => m.metadata?.text);
-
-        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.EDIT_SCHEDULE), pineconeMetadataText }, 'Pinecone results.');
 
         const response = await openai.chat.completions.create({
             model: "gpt-4o-2024-08-06",
@@ -127,8 +124,6 @@ export const editSchedule = async (schedule: Schedule, semesterIndex: number, qu
         });
 
         const scheduleResponseFromLLM = JSON.parse(response.choices[0].message.content ?? "{}");
-
-        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.EDIT_SCHEDULE), scheduleResponseFromLLM }, 'LLM edit response.');
 
         // only need to make cache or DB call if suggestions is populated.
         if (scheduleResponseFromLLM.suggestions.length > 0) {
@@ -181,10 +176,6 @@ const scheduleEnrichment = async (newScheduleRequest: NewScheduleRequest,
         // TODO: hit cache instead
         const consolidateCourses = (await academicRepository.getCourseByColumn([...majorPineconeCourseNames, ...minorPineconeCourseNames] as string[], "name"));
         const courseMap = new Map<string, Course>(consolidateCourses.map((c) => ([c.name, c])));
-
-        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), count: consolidateCourses.length }, 'Required courses fetched.');
-        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), context: majorPineconeMetadata.matches.map(m => m.metadata?.text) }, 'Pinecone major context.');
-        logger.debug({ ...formatMsg(LLM_SERVICE, LLM_METHODS.CREATE_SCHEDULE), context: minorPineconeMetadata?.matches.map(m => m.metadata?.text) }, 'Pinecone minor context.');
 
         const hasMinor = !!newScheduleRequest.studentInfo.minor;
 

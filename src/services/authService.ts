@@ -41,16 +41,10 @@ export const login = async (email: string, password: string): Promise<ResponseEn
 
     } catch(err) {
 
-        if (err instanceof UserNotFoundException) {
-            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGIN), err }, 'User not found.');
-            return new ResponseEntity(400, { cognitoStatus: "user-not-found"}, "User not found.");
+        if (err instanceof UserNotFoundException || err instanceof NotAuthorizedException) {
+            return new ResponseEntity(401, { cognitoStatus: "not-authenticated" }, "Invalid email or password.");
         }
 
-        if (err instanceof NotAuthorizedException) {
-            logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGIN), err }, 'Username or password is incorrect.');
-            return new ResponseEntity(401, { cognitoStatus: "not-authenticated" }, "Username or password is incorrect.");
-        }
-        
         logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGIN), err }, 'Login error.');
         return new ResponseEntity(500, {});
     }
@@ -69,6 +63,12 @@ export const register = async (email: string, password: string): Promise<Respons
     });
 
     try {
+
+        const cancelCount = await redis.get<number>(`register-cancel:${email}`) ?? 0;
+        if (cancelCount >= 3) {
+            logger.error(formatMsg(AUTH_SERVICE, AUTH_METHODS.REGISTER), 'Registration blocked due to too many cancellations.');
+            return new ResponseEntity(429, { cognitoStatus: 'too-many-requests' });
+        }
 
         const result = await client.send(command);
         await db.insert(users).values({ userSub: result.UserSub });
@@ -116,7 +116,7 @@ export const register = async (email: string, password: string): Promise<Respons
         }
 
         logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.REGISTER), err }, 'Register error.');
-        return new ResponseEntity(500, {}, "Internal server error: " + err);
+        return new ResponseEntity(500, {}, "Internal server error");
     }
 }
 
@@ -130,7 +130,7 @@ export const confirm = async (email: string, code: string): Promise<ResponseEnti
     });
 
     // grab current amount of attempts from cache - increments first then returns value
-    const attempts = await redis.incr(`confirm-attempts:${email}`).catch(err => new ResponseEntity(500, {}, "Internal server error." + err));
+    const attempts = await redis.incr(`confirm-attempts:${email}`).catch(err => new ResponseEntity(500, {}, "Internal server error."));
 
     // TODO: maybe global exception handler -> generic
     try {
@@ -176,7 +176,7 @@ export const confirm = async (email: string, code: string): Promise<ResponseEnti
         }
 
         logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.CONFIRM), err }, 'Confirm error.');
-        return new ResponseEntity(500, {}, "Internal server error." + err);
+        return new ResponseEntity(500, {}, "Internal server error.");
     }
 
 }
@@ -227,7 +227,7 @@ export const resendCode = async (email: string): Promise<ResponseEntity> => {
         }
 
         logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.RESEND_CODE), err }, 'Resend code error.');
-        return new ResponseEntity(500, {}, "Internal server error: " + err);
+        return new ResponseEntity(500, {}, "Internal server error.");
     }
 }
 
@@ -308,7 +308,7 @@ export const logout = async (req: Request): Promise<ResponseEntity> => {
     
     } catch(err) {
         logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.LOGOUT), err }, 'Logout error.');
-        return new ResponseEntity(500, false, "Internal server error. " + err);
+        return new ResponseEntity(500, false, "Internal server error.");
     }
 }
 
@@ -319,12 +319,16 @@ export const cancel = async (email: string): Promise<ResponseEntity> => {
         await redis.del(`confirm-attempts:${ email }`);
         await redis.del(`resend-code:${ email }`);
 
-        // do we need a cancel count?? to limit user cancel requests
+        const cancelCount = await redis.incr(`register-cancel:${email}`);
+        if (cancelCount === 1) {
+            await redis.expire(`register-cancel:${email}`, 86400);
+        }
+
         logger.info(formatMsg(AUTH_SERVICE, AUTH_METHODS.CANCEL), "Registration cancelled.");
         return new ResponseEntity(200, true);
 
     } catch(err) {
         logger.error({ ...formatMsg(AUTH_SERVICE, AUTH_METHODS.CANCEL), err }, 'Cancel error.');
-        return new ResponseEntity(500, {}, "Internal server error. " + err);
+        return new ResponseEntity(500, {}, "Internal server error.");
     }
 }

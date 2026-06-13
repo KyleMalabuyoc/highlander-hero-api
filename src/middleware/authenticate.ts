@@ -1,54 +1,36 @@
 import { Request, NextFunction, Response } from "express";
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { JwtParseError } from "aws-jwt-verify/error";
+import { ResponseEntity } from "../types/ResponseEntity.js";
+import { formatMsg, logger } from "../config/logger/pino.js";
+
+const verifier = CognitoJwtVerifier.create({
+    userPoolId: process.env.AWS_USER_POOL_ID ?? '',
+    tokenUse: 'access',
+    clientId: process.env.AWS_COGNITO_CLIENT_ID ?? ''
+});
 
 export const validateAccess = async (req: Request, res: Response, next: NextFunction) => {
 
     const accessToken = req.headers.authorization?.split(' ')[1] ?? '';
 
+    if (!accessToken) {
+        logger.error(formatMsg("AUTHENTICATE", "validateAccess"), "Invalid access token." );
+        return res.status(401).json(new ResponseEntity(401, {}, "Invalid access token."));
+    }
+
     try {
 
-       const verifier = CognitoJwtVerifier.create({
-        userPoolId: process.env.AWS_USER_POOL_ID ?? '',
-        tokenUse: 'access',
-        clientId: process.env.AWS_COGNITO_CLIENT_ID ?? ''
-       });
-
        req.user = await verifier.verify(accessToken);
-
        next();
 
     } catch(err) {
 
         if (err instanceof JwtParseError) {
-            console.error(err);
+            logger.error({ ...formatMsg("AUTHENTICATE", "validateAccess"), err }, 'Error grabbing access token.' );
         }
 
-        return res.status(401).json({ status: 401, message: "Invalid access token." });
+        return res.status(401).json(new ResponseEntity(401, {}, "Error grabbing access token."));
     }
 
-
-    /**
-     * 
-     * Flow here for verifying
-     * 
-     * Grab the bearer token
-     * 
-     * decode the JWT to access the kid
-     * 
-     * grab JWKS to verify the kid in the JWT with whats in cognito
-     * 
-     * store resulting http response from JWKS in memory using maybe jwks-rsa
-     * 
-     * verify that the JWT was signed from cognito using the public key mapped to the kid
-     * 
-     * authentictaed - extract sub, and username (email)
-     *
-     * 
-     * JWT is essentially the cache storing our information 
-     * so no need to store sub and username in cache BUT storing full user info in cache might be helpful
-     * 
-     * just need to use req.user( sub, email ) and then next()
-     * 
-     */
 }

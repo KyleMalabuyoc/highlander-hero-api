@@ -2,7 +2,6 @@ import { ChatCompletionTool } from "openai/resources";
 import { inArray } from "drizzle-orm";
 import { db } from "../../config/db.js";
 import { courses } from "../../config/schema.js";
-import { Course } from "../../types/Course.js";
 
 // tool used for our LLM to make DB calls
 export const get_course_tool: ChatCompletionTool[] = [{

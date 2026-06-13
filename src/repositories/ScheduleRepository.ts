@@ -1,6 +1,3 @@
-// getSchedules
-import { Request } from "express";
-// import { Schedule } from '../config/zod-schema.js';
 import { db } from "../config/db.js";
 import { coursePrerequisites, courses, majors, minors, schedules, semesterCourses, semesters, studentInfo, users } from "../config/schema.js";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -218,7 +215,6 @@ export const updateSchedule = async (request: UpdateScheduleRequest) => {
 
         }).catch((err) => {
             console.error(err);
-
             return false;
         });
 
@@ -229,7 +225,6 @@ export const updateSchedule = async (request: UpdateScheduleRequest) => {
         console.error(e);
 
         return false;
-
     }
 
 }

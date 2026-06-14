@@ -13,8 +13,6 @@ import { NewScheduleRequest } from '../types/requests/Requests.js';
 import { formatMsg, logger } from '../config/logger/pino.js';
 import { LLM_SERVICE, LLM_METHODS } from '../types/Logging.js';
 
-type RequiredCourse = Awaited<ReturnType<typeof academicRepository.getMajorRequiredCourses>>[number];
-
 export const createSchedule = async (newScheduleRequest: NewScheduleRequest) => {
 
      try {

@@ -38,25 +38,8 @@ export const isValidEmail = (email: unknown): boolean => {
     return /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(trimmed);
 };
 
-// Separate password pattern: omits the lone `'` check (apostrophes are valid in passwords
-// and are safe when hashed) but catches all multi-char injection sequences.
-const PASSWORD_INJECTION_PATTERN =
-    /--|;|\/\*|\*\/|xp_|0x[0-9a-f]{2,}|union[\s/*]+|select[\s/*]+|insert[\s/*]+|update[\s/*]+|delete[\s/*]+|drop[\s/*]+|exec[\s/*]+|execute[\s/*]+|waitfor[\s/*]+delay|sleep\s*\(|benchmark\s*\(/i;
-
-export const isValidPassword = (password: unknown): boolean => {
-    if (!isString(password) || !password.trim()) return false;
-    if (password.length < 8 || password.length > 100) return false;
-    // Null bytes can truncate bcrypt hashes, making password\x00garbage === password
-    if (CONTROL_CHAR_PATTERN.test(password)) return false;
-    if (ZERO_WIDTH_PATTERN.test(password)) return false;
-    if (URL_ENCODED_ATTACK_PATTERN.test(password)) return false;
-    if (PASSWORD_INJECTION_PATTERN.test(password)) return false;
-    if (!/[A-Z]/.test(password)) return false;
-    if (!/[a-z]/.test(password)) return false;
-    if (!/[0-9]/.test(password)) return false;
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) return false;
-    return true;
-};
+export const isValidPassword = (password: unknown): boolean =>
+    isString(password) && password.length >= 8 && password.length <= 100;
 
 // Whitelist is the primary defense; control/zero-width checks are belt-and-suspenders.
 export const isValidScheduleName = (name: unknown): boolean => {
@@ -160,8 +143,8 @@ const isDescriptionSafe = (val: string): boolean =>
 
 // ── Course ────────────────────────────────────────────────────────────────────
 
-// Alphanumeric, spaces, dashes, forward-slash, asterisk, and colon (for subtitle format e.g. "ENGL 101 - Composition: Introduction to Writing")
-const COURSE_NAME_PATTERN = /^[a-zA-Z0-9 \-/*:]+$/;
+// Alphanumeric, spaces, dashes, forward-slash, asterisk, colon, ampersand, plus, and period
+const COURSE_NAME_PATTERN = /^[a-zA-Z0-9 \-/*:&+.]+$/;
 
 export const isValidCourseName = (name: unknown): boolean => {
     if (!isString(name) || !name.trim()) return false;
@@ -202,6 +185,7 @@ export const isValidCourseStatus = (status: unknown): boolean => {
 const VALID_COURSE_TYPES = new Set([
     'cs-core', 'math-core', 'english-core', 'writing-core', 'science-core',
     'design-core', 'design-elective', 'seminar', 'elective', 'gen-ed', 'lab', 'capstone',
+    'engineering-core', 'engineering-elective', 'major',
 ]);
 
 export const isValidCourseType = (type: unknown): boolean => {

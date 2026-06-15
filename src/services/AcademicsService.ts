@@ -45,7 +45,7 @@ export const getCourses = async (): Promise<ResponseEntity> => {
     } catch(err) {
 
         logger.error({ ...formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_COURSES), err }, 'DB Error.' );
-        return new ResponseEntity(500, { err }, "Something went wrong. Please try again later.");
+        return new ResponseEntity(500, {}, "Something went wrong. Please try again later.");
     }
 }
 
@@ -76,7 +76,7 @@ export const getMajors = async (): Promise<ResponseEntity> => {
     } catch(err) {
 
         logger.error({ ...formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MAJORS), err }, 'DB Error.' );
-        return new ResponseEntity(500, { err }, "Something went wrong. Please try again later.");
+        return new ResponseEntity(500, {}, "Something went wrong. Please try again later.");
     }
 }
 
@@ -107,6 +107,6 @@ export const getMinors = async (): Promise<ResponseEntity> => {
     } catch(err) {
 
         logger.error({ ...formatMsg(ACADEMIC_SERVICE, ACADEMIC_METHODS.GET_MINORS), err }, 'DB Error.' );
-        return new ResponseEntity(500, { err }, "Something went wrong. Please try again later.");
+        return new ResponseEntity(500, {}, "Something went wrong. Please try again later.");
     }
 }

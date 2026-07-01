@@ -1,6 +1,6 @@
 {
   "name": "highlander-hero-api",
-  "version": "1.0.0",
+  "version": "1.0.0-SNAPSHOT",
   "description": "Backend API service for Highlander Hero academic advisor",
   "type": "module",
   "main": "dist/index.js",

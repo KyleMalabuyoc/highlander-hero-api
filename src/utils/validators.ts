@@ -144,7 +144,7 @@ const isDescriptionSafe = (val: string): boolean =>
 // ── Course ────────────────────────────────────────────────────────────────────
 
 // Alphanumeric, spaces, dashes, forward-slash, asterisk, colon, ampersand, plus, and period
-const COURSE_NAME_PATTERN = /^[a-zA-Z0-9 \-/*:&+.]+$/;
+const COURSE_NAME_PATTERN = /^[a-zA-Z0-9 \-/*:&+.,]+$/;
 
 export const isValidCourseName = (name: unknown): boolean => {
     if (!isString(name) || !name.trim()) return false;
@@ -183,7 +183,7 @@ export const isValidCourseStatus = (status: unknown): boolean => {
 
 // Covers all observed course type slugs from the LLM and DB
 const VALID_COURSE_TYPES = new Set([
-    'cs-core', 'math-core', 'english-core', 'writing-core', 'science-core',
+    'cs-core', 'cs-elective', 'math-core', 'english-core', 'writing-core', 'science-core',
     'design-core', 'design-elective', 'seminar', 'elective', 'gen-ed', 'lab', 'capstone',
     'engineering-core', 'engineering-elective', 'major',
 ]);
@@ -193,21 +193,21 @@ export const isValidCourseType = (type: unknown): boolean => {
     return VALID_COURSE_TYPES.has(type.trim().toLowerCase());
 };
 
-const MAX_PREREQUISITES = 10;
+const MAX_PREREQUISITES = 20;
 
 export const isValidCourse = (course: unknown): boolean => {
     if (typeof course !== 'object' || course === null || Array.isArray(course)) return false;
     const c = course as Record<string, unknown>;
-    if (c.id !== undefined && !isValidId(c.id)) return false;
-    if (!isValidCourseName(c.name)) return false;
-    if (!isValidCourseCode(c.code)) return false;
-    if (!isValidCourseDescription(c.description)) return false;
-    if (!isValidCourseCredits(c.credits)) return false;
-    if (!isValidCourseStatus(c.status)) return false;
-    if (!isValidCourseType(c.type)) return false;
-    if (!Array.isArray(c.prerequisites) || (c.prerequisites as unknown[]).length > MAX_PREREQUISITES) return false;
-    if (!(c.prerequisites as unknown[]).every(isValidCourse)) return false;
-    if (c.jobRelevancy !== undefined && !isValidCourseDescription(c.jobRelevancy)) return false;
+    if (c.id !== undefined && !isValidId(c.id)) { console.error('[validator] invalid id:', c.name, c.id); return false; }
+    if (!isValidCourseName(c.name)) { console.error('[validator] invalid name:', c.name); return false; }
+    if (!isValidCourseCode(c.code)) { console.error('[validator] invalid code:', c.name, c.code); return false; }
+    if (!isValidCourseDescription(c.description)) { console.error('[validator] invalid description:', c.name); return false; }
+    if (!isValidCourseCredits(c.credits)) { console.error('[validator] invalid credits:', c.name, c.credits); return false; }
+    if (!isValidCourseStatus(c.status)) { console.error('[validator] invalid status:', c.name, c.status); return false; }
+    if (!isValidCourseType(c.type)) { console.error('[validator] invalid type:', c.name, c.type); return false; }
+    if (!Array.isArray(c.prerequisites) || (c.prerequisites as unknown[]).length > MAX_PREREQUISITES) { console.error('[validator] invalid prerequisites array:', c.name, (c.prerequisites as unknown[])?.length); return false; }
+    if (!(c.prerequisites as unknown[]).every(p => isValidId(p) || isValidCourse(p))) { console.error('[validator] invalid prerequisite item in:', c.name); return false; }
+    if (c.jobRelevancy !== undefined && !isValidCourseDescription(c.jobRelevancy)) { console.error('[validator] invalid jobRelevancy:', c.name); return false; }
     return true;
 };
 

@@ -46,6 +46,11 @@ app.use(cors(corsOptions));
 app.use(cookieParser()) // cookie parser middleware to be able to grab cookies when they get to server
 app.use('/api/v1', router);
 
+// health check
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok' });
+})
+
 app.listen(process.env.PORT, (err) => {
     if (err) console.log(err);
     console.log("Server runnning on port...", process.env.PORT);

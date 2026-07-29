@@ -49,7 +49,7 @@ app.use('/api/v1', router);
 // health check
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });
-})
+});
 
 app.listen(process.env.PORT, (err) => {
     if (err) console.log(err);

@@ -7,6 +7,7 @@ export const ratelimiter = async (ip: string, limit: number, windowMs: number) =
     const key = `ratelimit:${ip}`;
 
     // atomic operation to remove the timestamps that dont fall in this window
+    // so drop everything from the beginning of time to 1 minute ago
     await redis.zremrangebyscore(key, 0, start);
 
     // counts total items in set stored at that key in cache

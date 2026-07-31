@@ -2,13 +2,16 @@ import { Request, NextFunction, Response } from "express";
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { JwtParseError } from "aws-jwt-verify/error";
 import { ResponseEntity } from "../types/ResponseEntity.js";
-import { formatMsg, logger } from "../config/logger/pino.js";
+import { formatMsg, logger, runWithContext } from "../config/logger/pino.js";
+import * as userRepository from '../repositories/UserRepository.js';
 
 const verifier = CognitoJwtVerifier.create({
     userPoolId: process.env.AWS_USER_POOL_ID ?? '',
     tokenUse: 'access',
     clientId: process.env.AWS_COGNITO_CLIENT_ID ?? ''
 });
+
+let userId = -1;
 
 export const validateAccess = async (req: Request, res: Response, next: NextFunction) => {
 
@@ -22,7 +25,10 @@ export const validateAccess = async (req: Request, res: Response, next: NextFunc
     try {
 
        req.user = await verifier.verify(accessToken);
-       next();
+       if(userId === -1) { // if it was never set
+        const userId = await userRepository.getUserId(req.user?.sub, req.user?.username);
+        runWithContext(userId, () => next());
+       }
 
     } catch(err) {
 

@@ -1,5 +1,13 @@
 import { Request, Response } from "express";
-import pino, { SerializedRequest, SerializedResponse } from "pino";
+import pino from "pino";
+import { AsyncLocalStorage } from "async_hooks";
+
+const store = new AsyncLocalStorage<{ userId: number }>();
+
+// this is the function we call to store whatever value we want in the store.
+export const runWithContext = (userId: number, fn: () => void) => {
+    store.run({ userId }, fn);
+}
 
 // this config is used for the log level, timestamp format, redact, transport (how logs are output)
 export const logger = pino({
@@ -18,17 +26,17 @@ export const autologging = {
 
 // only for HTTP req/res shape
 export const customHTTPSerializer = {
-    req: (req: SerializedRequest) => ({
-        method: req.method,
-        url: req.url,
-        transactionId: req.headers['transaction-id'],
-        // userId: req.raw?.user?.sub
-    }),
-    res: (res: SerializedResponse) => ({
+    req: (req: Request) => (
+        {
+            method: req.method,
+            url: req.url,
+            transactionId: req.headers['transaction-id']
+        }
+    ),
+    res: (res: Response) => ({
         statusCode: res.statusCode,
         // responseTime: res.raw?.[startTime]  // how long it took
     })
-
 
     // we can add other logs like request body response body within the code itself
 }
@@ -39,5 +47,6 @@ export const customHTTPSerializer = {
  */
 
 export const formatMsg = (source: string, method: string) => {
-    return { source, method };
+    const userId = store.getStore()?.userId ?? -1;
+    return { userId, source, method };
 }

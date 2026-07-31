@@ -26,9 +26,11 @@ export const validateAccess = async (req: Request, res: Response, next: NextFunc
 
        req.user = await verifier.verify(accessToken);
        if(userId === -1) { // if it was never set
-        const userId = await userRepository.getUserId(req.user?.sub, req.user?.username);
-        runWithContext(userId, () => next());
+        userId = await userRepository.getUserId(req.user?.sub, req.user?.username);
+        return runWithContext(userId, () => next());
        }
+
+       next();
 
     } catch(err) {
 
